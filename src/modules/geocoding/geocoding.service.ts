@@ -50,7 +50,11 @@ export class GeocodingService {
         longitude: parseFloat(x),
       };
     } catch (error) {
-      this.logger.error(`주소 변환 API 호출 실패: ${error.message}`);
+      const status = error.response?.status;
+      const data = error.response?.data;
+      this.logger.error(
+        `주소 변환 API 호출 실패: status=${status}, message=${error.message}, response=${JSON.stringify(data)}`,
+      );
       return null;
     }
   }
