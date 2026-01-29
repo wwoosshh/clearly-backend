@@ -60,7 +60,12 @@ export class AuthService {
   }
 
   async registerCompany(registerCompanyDto: RegisterCompanyDto) {
-    const { email, password, name, phone, businessName, businessNumber, representative, address, detailAddress } = registerCompanyDto;
+    const {
+      email, password, name, phone,
+      businessName, businessNumber, representative,
+      address, detailAddress,
+      specialties, serviceAreas, description, minPrice, maxPrice,
+    } = registerCompanyDto;
 
     const existingUser = await this.prisma.user.findUnique({
       where: { email },
@@ -114,6 +119,11 @@ export class AuthService {
           detailAddress,
           latitude,
           longitude,
+          specialties: specialties || [],
+          serviceAreas: serviceAreas || [],
+          description,
+          minPrice,
+          maxPrice,
           verificationStatus: 'PENDING',
         },
       });

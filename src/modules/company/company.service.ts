@@ -7,7 +7,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { UpdateCompanyDto } from './dto/update-company.dto';
-import { SearchCompanyDto } from './dto/search-company.dto';
+import { SearchCompanyDto, SortBy } from './dto/search-company.dto';
 
 @Injectable()
 export class CompanyService {
@@ -122,14 +122,18 @@ export class CompanyService {
 
   async searchCompanies(dto: SearchCompanyDto) {
     const {
+      keyword,
+      specialty,
+      region,
       address,
+      sortBy = SortBy.SCORE,
       page = 1,
       limit = 10,
       maxDistance = 50,
     } = dto;
     let { latitude, longitude } = dto;
 
-    // 주소가 있으면 좌표로 변환
+    // 주소가 있으면 좌표로 변환 시도
     if (address && (!latitude || !longitude)) {
       const coords = await this.geocodingService.geocodeAddress(address);
       if (coords) {
@@ -138,13 +142,11 @@ export class CompanyService {
       }
     }
 
-    // 승인된 활성 업체 중 좌표가 있는 업체 조회
+    // 승인된 활성 업체 조회 (좌표 필수 조건 제거)
     const companies = await this.prisma.company.findMany({
       where: {
         verificationStatus: 'APPROVED',
         isActive: true,
-        latitude: { not: null },
-        longitude: { not: null },
       },
       include: {
         user: {
@@ -170,46 +172,99 @@ export class CompanyService {
 
     const hasSearchLocation = latitude != null && longitude != null;
 
-    // 거리 계산 및 필터링
+    // 필터링 + 점수 산출
     const companiesWithScore = companies
       .map((company) => {
-        const distance = hasSearchLocation
-          ? this.calculateHaversineDistance(
-              latitude!,
-              longitude!,
-              Number(company.latitude),
-              Number(company.longitude),
-            )
-          : null;
+        // 키워드 필터: 업체명 또는 소개에 포함
+        if (keyword) {
+          const kw = keyword.toLowerCase();
+          const nameMatch = company.businessName?.toLowerCase().includes(kw);
+          const descMatch = company.description?.toLowerCase().includes(kw);
+          const specMatch = Array.isArray(company.specialties)
+            ? (company.specialties as string[]).some((s) =>
+                s.toLowerCase().includes(kw),
+              )
+            : false;
+          if (!nameMatch && !descMatch && !specMatch) return null;
+        }
 
-        // 거리 초과 제외
-        if (hasSearchLocation && distance! > maxDistance) {
-          return null;
+        // 전문분야 필터
+        if (specialty) {
+          const specs = Array.isArray(company.specialties)
+            ? (company.specialties as string[])
+            : [];
+          if (!specs.some((s) => s.includes(specialty))) return null;
+        }
+
+        // 지역 필터: serviceAreas 또는 address에 포함
+        if (region) {
+          const areas = Array.isArray(company.serviceAreas)
+            ? (company.serviceAreas as string[])
+            : [];
+          const areaMatch = areas.some((a) => a.includes(region));
+          const addrMatch = company.address?.includes(region);
+          if (!areaMatch && !addrMatch) return null;
+        }
+
+        // 거리 계산 (좌표가 있는 경우에만)
+        let distance: number | null = null;
+        if (
+          hasSearchLocation &&
+          company.latitude != null &&
+          company.longitude != null
+        ) {
+          distance = this.calculateHaversineDistance(
+            latitude!,
+            longitude!,
+            Number(company.latitude),
+            Number(company.longitude),
+          );
+          if (distance > maxDistance) return null;
         }
 
         // 구독 등급 가중치
         const subscription = company.subscriptions[0];
         const priorityWeight = subscription?.plan?.priorityWeight ?? 1.0;
 
-        // 가중 점수 산출
-        const distanceScore = this.calcDistanceScore(distance, maxDistance);
+        // 가중 점수 산출 (위치 유무에 따라 가중치 조정)
         const ratingScore = this.calcRatingScore(
-          company.averageRating != null ? Number(company.averageRating) : null,
+          company.averageRating != null
+            ? Number(company.averageRating)
+            : null,
         );
-        const responseScore = this.calcResponseTimeScore(company.responseTime);
-        const matchingScore = this.calcMatchingScore(company.totalMatchings);
+        const responseScore = this.calcResponseTimeScore(
+          company.responseTime,
+        );
+        const matchingScore = this.calcMatchingScore(
+          company.totalMatchings,
+        );
         const subscriptionScore = this.calcSubscriptionScore(
           typeof priorityWeight === 'object' && priorityWeight !== null
             ? (priorityWeight as any).toNumber()
             : (priorityWeight as number),
         );
+        const profileScore = this.calcProfileCompleteness(company);
 
-        const totalScore =
-          distanceScore * 0.4 +
-          ratingScore * 0.25 +
-          responseScore * 0.15 +
-          matchingScore * 0.1 +
-          subscriptionScore * 0.1;
+        let totalScore: number;
+        if (hasSearchLocation && distance != null) {
+          // 위치 정보 있을 때: 거리 포함
+          const distanceScore = this.calcDistanceScore(distance, maxDistance);
+          totalScore =
+            distanceScore * 0.3 +
+            ratingScore * 0.25 +
+            profileScore * 0.15 +
+            responseScore * 0.1 +
+            matchingScore * 0.1 +
+            subscriptionScore * 0.1;
+        } else {
+          // 위치 정보 없을 때: 거리 제외, 다른 요소로 보상
+          totalScore =
+            ratingScore * 0.35 +
+            profileScore * 0.25 +
+            responseScore * 0.15 +
+            matchingScore * 0.15 +
+            subscriptionScore * 0.1;
+        }
 
         return {
           id: company.id,
@@ -221,21 +276,23 @@ export class CompanyService {
           description: company.description,
           profileImages: company.profileImages,
           specialties: company.specialties,
+          serviceAreas: company.serviceAreas,
           minPrice: company.minPrice,
           maxPrice: company.maxPrice,
           averageRating: company.averageRating,
           totalReviews: company.totalReviews,
           totalMatchings: company.totalMatchings,
           responseTime: company.responseTime,
-          distance: distance != null ? Math.round(distance * 10) / 10 : null,
+          distance:
+            distance != null ? Math.round(distance * 10) / 10 : null,
           score: Math.round(totalScore * 10) / 10,
           user: company.user,
         };
       })
       .filter(Boolean) as any[];
 
-    // 총점 내림차순 정렬
-    companiesWithScore.sort((a, b) => b.score - a.score);
+    // 정렬
+    this.sortCompanies(companiesWithScore, sortBy);
 
     // 페이지네이션
     const total = companiesWithScore.length;
@@ -254,9 +311,43 @@ export class CompanyService {
         limit,
         totalPages,
       },
-      searchLocation:
-        hasSearchLocation ? { latitude, longitude } : null,
+      searchLocation: hasSearchLocation
+        ? { latitude, longitude }
+        : null,
     };
+  }
+
+  /** 정렬 */
+  private sortCompanies(companies: any[], sortBy: SortBy) {
+    switch (sortBy) {
+      case SortBy.RATING:
+        companies.sort(
+          (a, b) => (Number(b.averageRating) || 0) - (Number(a.averageRating) || 0),
+        );
+        break;
+      case SortBy.REVIEWS:
+        companies.sort((a, b) => (b.totalReviews || 0) - (a.totalReviews || 0));
+        break;
+      case SortBy.MATCHINGS:
+        companies.sort(
+          (a, b) => (b.totalMatchings || 0) - (a.totalMatchings || 0),
+        );
+        break;
+      case SortBy.PRICE_LOW:
+        companies.sort(
+          (a, b) => (a.minPrice ?? Infinity) - (b.minPrice ?? Infinity),
+        );
+        break;
+      case SortBy.PRICE_HIGH:
+        companies.sort(
+          (a, b) => (b.maxPrice ?? 0) - (a.maxPrice ?? 0),
+        );
+        break;
+      case SortBy.SCORE:
+      default:
+        companies.sort((a, b) => b.score - a.score);
+        break;
+    }
   }
 
   /** Haversine 공식으로 두 좌표 간 거리 계산 (km) */
@@ -313,5 +404,21 @@ export class CompanyService {
   /** 구독등급 점수: priorityWeight 기반, 3.0=100 */
   private calcSubscriptionScore(priorityWeight: number): number {
     return Math.min(100, (priorityWeight / 3.0) * 100);
+  }
+
+  /** 프로필 완성도 점수: 정보가 많이 채워진 업체 우대 */
+  private calcProfileCompleteness(company: any): number {
+    let filled = 0;
+    const total = 7;
+
+    if (company.description) filled++;
+    if (Array.isArray(company.specialties) && (company.specialties as any[]).length > 0) filled++;
+    if (Array.isArray(company.serviceAreas) && (company.serviceAreas as any[]).length > 0) filled++;
+    if (company.minPrice != null || company.maxPrice != null) filled++;
+    if (Array.isArray(company.profileImages) && (company.profileImages as any[]).length > 0) filled++;
+    if (Array.isArray(company.certificates) && (company.certificates as any[]).length > 0) filled++;
+    if (company.address) filled++;
+
+    return (filled / total) * 100;
   }
 }

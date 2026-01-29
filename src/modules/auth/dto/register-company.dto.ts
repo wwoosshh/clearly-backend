@@ -3,11 +3,15 @@ import {
   IsNotEmpty,
   IsString,
   IsOptional,
+  IsArray,
+  IsNumber,
+  Min,
   MinLength,
   MaxLength,
   Matches,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export class RegisterCompanyDto {
   // 유저 정보
@@ -68,4 +72,46 @@ export class RegisterCompanyDto {
   @IsOptional()
   @MaxLength(200, { message: '상세주소는 최대 200자까지 가능합니다.' })
   detailAddress?: string;
+
+  // 서비스 정보
+  @ApiPropertyOptional({
+    description: '전문분야',
+    example: ['이사청소', '입주청소'],
+  })
+  @IsArray({ message: '전문분야는 배열이어야 합니다.' })
+  @IsString({ each: true, message: '전문분야 항목은 문자열이어야 합니다.' })
+  @IsOptional()
+  specialties?: string[];
+
+  @ApiPropertyOptional({
+    description: '서비스 가능 지역',
+    example: ['서울 강남구', '서울 서초구'],
+  })
+  @IsArray({ message: '서비스 지역은 배열이어야 합니다.' })
+  @IsString({ each: true, message: '서비스 지역 항목은 문자열이어야 합니다.' })
+  @IsOptional()
+  serviceAreas?: string[];
+
+  @ApiPropertyOptional({
+    description: '업체 소개',
+    example: '10년 경력의 전문 청소 업체입니다.',
+  })
+  @IsString({ message: '업체 소개는 문자열이어야 합니다.' })
+  @IsOptional()
+  @MaxLength(2000, { message: '업체 소개는 최대 2000자까지 가능합니다.' })
+  description?: string;
+
+  @ApiPropertyOptional({ description: '최소 가격 (원)', example: 100000 })
+  @Type(() => Number)
+  @IsNumber({}, { message: '최소 가격은 숫자여야 합니다.' })
+  @Min(0, { message: '최소 가격은 0 이상이어야 합니다.' })
+  @IsOptional()
+  minPrice?: number;
+
+  @ApiPropertyOptional({ description: '최대 가격 (원)', example: 500000 })
+  @Type(() => Number)
+  @IsNumber({}, { message: '최대 가격은 숫자여야 합니다.' })
+  @Min(0, { message: '최대 가격은 0 이상이어야 합니다.' })
+  @IsOptional()
+  maxPrice?: number;
 }
