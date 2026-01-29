@@ -16,6 +16,7 @@ import {
 } from '@nestjs/swagger';
 import { CompanyService } from './company.service';
 import { UpdateCompanyDto } from './dto/update-company.dto';
+import { SearchCompanyDto } from './dto/search-company.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -32,6 +33,13 @@ export class CompanyController {
     @Query('limit') limit: number = 10,
   ) {
     return this.companyService.findAll(page, limit);
+  }
+
+  @Get('search')
+  @ApiOperation({ summary: '업체 검색 (거리 + 점수 기반 랭킹)' })
+  @ApiResponse({ status: 200, description: '업체 검색 성공' })
+  async search(@Query() searchDto: SearchCompanyDto) {
+    return this.companyService.searchCompanies(searchDto);
   }
 
   @Get(':id')

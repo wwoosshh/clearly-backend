@@ -3,11 +3,13 @@ import {
   UnauthorizedException,
   ConflictException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GeocodingService } from '../geocoding/geocoding.service';
 import { RegisterDto } from './dto/register.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
 import { LoginDto } from './dto/login.dto';
@@ -18,6 +20,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly geocodingService: GeocodingService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -78,6 +81,21 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
+    // 주소 → 좌표 변환
+    let latitude: number | undefined;
+    let longitude: number | undefined;
+
+    if (address) {
+      const coords = await this.geocodingService.geocodeAddress(address);
+      if (!coords) {
+        throw new BadRequestException(
+          '유효하지 않은 주소입니다. 정확한 주소를 입력해주세요.',
+        );
+      }
+      latitude = coords.latitude;
+      longitude = coords.longitude;
+    }
+
     const result = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -98,6 +116,8 @@ export class AuthService {
           representative,
           address,
           detailAddress,
+          latitude,
+          longitude,
           verificationStatus: 'PENDING',
         },
       });

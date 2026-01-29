@@ -57,11 +57,11 @@ export class RegisterCompanyDto {
   @MaxLength(50, { message: '대표자명은 최대 50자까지 가능합니다.' })
   representative: string;
 
-  @ApiPropertyOptional({ description: '주소', example: '서울특별시 강남구 역삼동' })
+  @ApiProperty({ description: '주소', example: '서울특별시 강남구 역삼동' })
   @IsString({ message: '주소는 문자열이어야 합니다.' })
-  @IsOptional()
+  @IsNotEmpty({ message: '주소는 필수 입력 항목입니다.' })
   @MaxLength(300, { message: '주소는 최대 300자까지 가능합니다.' })
-  address?: string;
+  address: string;
 
   @ApiPropertyOptional({ description: '상세주소', example: '101호' })
   @IsString({ message: '상세주소는 문자열이어야 합니다.' })
