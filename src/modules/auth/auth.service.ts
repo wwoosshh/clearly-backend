@@ -3,7 +3,6 @@ import {
   UnauthorizedException,
   ConflictException,
   ForbiddenException,
-  BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -81,19 +80,16 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // 주소 → 좌표 변환
+    // 주소 → 좌표 변환 (실패해도 가입은 진행)
     let latitude: number | undefined;
     let longitude: number | undefined;
 
     if (address) {
       const coords = await this.geocodingService.geocodeAddress(address);
-      if (!coords) {
-        throw new BadRequestException(
-          '유효하지 않은 주소입니다. 정확한 주소를 입력해주세요.',
-        );
+      if (coords) {
+        latitude = coords.latitude;
+        longitude = coords.longitude;
       }
-      latitude = coords.latitude;
-      longitude = coords.longitude;
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
