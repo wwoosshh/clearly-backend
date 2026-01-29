@@ -2,12 +2,14 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
+import { RegisterCompanyDto } from './dto/register-company.dto';
 import { LoginDto } from './dto/login.dto';
 
 @Injectable()
@@ -38,6 +40,7 @@ export class AuthService {
         name,
         phone,
         role: 'USER',
+        isActive: true,
       },
     });
 
@@ -54,9 +57,88 @@ export class AuthService {
     };
   }
 
+  async registerCompany(registerCompanyDto: RegisterCompanyDto) {
+    const { email, password, name, phone, businessName, businessNumber, representative, address, detailAddress } = registerCompanyDto;
+
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (existingUser) {
+      throw new ConflictException('이미 등록된 이메일 주소입니다.');
+    }
+
+    const existingCompany = await this.prisma.company.findFirst({
+      where: { businessNumber },
+    });
+
+    if (existingCompany) {
+      throw new ConflictException('이미 등록된 사업자등록번호입니다.');
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email,
+          passwordHash: hashedPassword,
+          name,
+          phone,
+          role: 'COMPANY',
+          isActive: false,
+        },
+      });
+
+      const company = await tx.company.create({
+        data: {
+          userId: user.id,
+          businessName,
+          businessNumber,
+          representative,
+          address,
+          detailAddress,
+          verificationStatus: 'PENDING',
+        },
+      });
+
+      return { user, company };
+    });
+
+    return {
+      message: '업체 가입이 완료되었습니다. 관리자 승인 후 이용 가능합니다.',
+      user: {
+        id: result.user.id,
+        email: result.user.email,
+        name: result.user.name,
+        role: result.user.role,
+      },
+      company: {
+        id: result.company.id,
+        businessName: result.company.businessName,
+        verificationStatus: result.company.verificationStatus,
+      },
+    };
+  }
+
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;
     const user = await this.validateUser(email, password);
+
+    if (!user.isActive) {
+      throw new ForbiddenException(
+        '비활성화된 계정입니다. 업체 계정인 경우 관리자 승인을 기다려주세요.',
+      );
+    }
+
+    // 기존 만료된 토큰 정리
+    await this.prisma.refreshToken.deleteMany({
+      where: {
+        userId: user.id,
+        expiresAt: { lt: new Date() },
+      },
+    });
+
     const tokens = await this.generateTokens(user.id, user.email, user.role);
 
     return {
@@ -70,6 +152,14 @@ export class AuthService {
     };
   }
 
+  async logout(userId: string) {
+    await this.prisma.refreshToken.deleteMany({
+      where: { userId },
+    });
+
+    return { message: '로그아웃 되었습니다.' };
+  }
+
   async refreshToken(refreshToken: string) {
     try {
       const payload = await this.jwtService.verifyAsync(refreshToken, {
@@ -77,6 +167,15 @@ export class AuthService {
           this.configService.get('JWT_REFRESH_SECRET') ||
           'default-refresh-secret',
       });
+
+      // DB에서 토큰 조회
+      const storedToken = await this.prisma.refreshToken.findUnique({
+        where: { token: refreshToken },
+      });
+
+      if (!storedToken || storedToken.expiresAt < new Date()) {
+        throw new UnauthorizedException('유효하지 않은 리프레시 토큰입니다.');
+      }
 
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
@@ -86,8 +185,16 @@ export class AuthService {
         throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
       }
 
+      // 토큰 로테이션: 이전 토큰 삭제 → 새 토큰 생성
+      await this.prisma.refreshToken.delete({
+        where: { id: storedToken.id },
+      });
+
       return this.generateTokens(user.id, user.email, user.role);
-    } catch {
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException('유효하지 않은 리프레시 토큰입니다.');
     }
   }
@@ -151,6 +258,18 @@ export class AuthService {
         expiresIn: 604800, // 7 days
       }),
     ]);
+
+    // RefreshToken을 DB에 저장
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await this.prisma.refreshToken.create({
+      data: {
+        userId,
+        token: refreshToken,
+        expiresAt,
+      },
+    });
 
     return { accessToken, refreshToken };
   }

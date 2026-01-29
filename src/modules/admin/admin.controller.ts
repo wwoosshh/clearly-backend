@@ -1,7 +1,6 @@
 import {
   Controller,
   Get,
-  Post,
   Patch,
   Body,
   Param,
@@ -15,6 +14,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
+import { RejectCompanyDto } from './dto/reject-company.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -49,14 +49,20 @@ export class AdminController {
   @ApiOperation({ summary: '업체 승인' })
   @ApiResponse({ status: 200, description: '업체 승인 성공' })
   async approveCompany(@Param('companyId') companyId: string) {
-    return this.adminService.approveCompany(companyId, true);
+    return this.adminService.approveCompany(companyId);
   }
 
   @Patch('companies/:companyId/reject')
   @ApiOperation({ summary: '업체 반려' })
   @ApiResponse({ status: 200, description: '업체 반려 성공' })
-  async rejectCompany(@Param('companyId') companyId: string) {
-    return this.adminService.approveCompany(companyId, false);
+  async rejectCompany(
+    @Param('companyId') companyId: string,
+    @Body() rejectCompanyDto: RejectCompanyDto,
+  ) {
+    return this.adminService.rejectCompany(
+      companyId,
+      rejectCompanyDto.rejectionReason,
+    );
   }
 
   @Get('reports')

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -7,39 +7,154 @@ export class AdminService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // TODO: 대시보드 통계 조회
   async getDashboardStats() {
-    // TODO: 구현 예정
-    return null;
+    const [totalUsers, totalCompanies, pendingCompanies, totalMatchings] =
+      await Promise.all([
+        this.prisma.user.count(),
+        this.prisma.company.count(),
+        this.prisma.company.count({
+          where: { verificationStatus: 'PENDING' },
+        }),
+        this.prisma.matching.count(),
+      ]);
+
+    return {
+      totalUsers,
+      totalCompanies,
+      pendingCompanies,
+      totalMatchings,
+    };
   }
 
-  // TODO: 사용자 관리 (목록, 상태변경)
   async getUsers(page: number, limit: number, filters: any) {
-    // TODO: 구현 예정
-    return [];
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (filters?.role) {
+      where.role = filters.role;
+    }
+    if (filters?.isActive !== undefined) {
+      where.isActive = filters.isActive === 'true';
+    }
+
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          phone: true,
+          role: true,
+          isActive: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      data: users,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
-  // TODO: 업체 승인/반려
-  async approveCompany(companyId: string, approved: boolean) {
-    // TODO: 구현 예정
-    return null;
+  async approveCompany(companyId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+    });
+
+    if (!company) {
+      throw new NotFoundException('업체를 찾을 수 없습니다.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedCompany = await tx.company.update({
+        where: { id: companyId },
+        data: {
+          verificationStatus: 'APPROVED',
+          approvedAt: new Date(),
+        },
+      });
+
+      await tx.user.update({
+        where: { id: company.userId },
+        data: { isActive: true },
+      });
+
+      return updatedCompany;
+    });
   }
 
-  // TODO: 신고 관리
+  async rejectCompany(companyId: string, rejectionReason: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+    });
+
+    if (!company) {
+      throw new NotFoundException('업체를 찾을 수 없습니다.');
+    }
+
+    return this.prisma.company.update({
+      where: { id: companyId },
+      data: {
+        verificationStatus: 'REJECTED',
+        rejectionReason,
+      },
+    });
+  }
+
   async getReports(page: number, limit: number) {
-    // TODO: 구현 예정
-    return [];
+    const skip = (page - 1) * limit;
+
+    const [reports, total] = await Promise.all([
+      this.prisma.report.findMany({
+        skip,
+        take: limit,
+        include: {
+          reporter: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.report.count(),
+    ]);
+
+    return {
+      data: reports,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
-  // TODO: 시스템 설정 관리
   async getSettings() {
-    // TODO: 구현 예정
-    return null;
+    // TODO: 시스템 설정 테이블 추가 후 구현
+    return {
+      message: '시스템 설정 기능은 추후 구현 예정입니다.',
+    };
   }
 
-  // TODO: 시스템 설정 수정
   async updateSettings(data: any) {
-    // TODO: 구현 예정
-    return null;
+    // TODO: 시스템 설정 테이블 추가 후 구현
+    return {
+      message: '시스템 설정 기능은 추후 구현 예정입니다.',
+    };
   }
 }

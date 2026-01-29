@@ -1,5 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { UpdateCompanyDto } from './dto/update-company.dto';
 
 @Injectable()
 export class CompanyService {
@@ -7,33 +13,105 @@ export class CompanyService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // TODO: 업체 등록
   async create(data: any) {
-    // TODO: 구현 예정
-    return null;
+    return this.prisma.company.create({ data });
   }
 
-  // TODO: 업체 상세 조회
   async findById(id: string) {
-    // TODO: 구현 예정
-    return null;
+    const company = await this.prisma.company.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            phone: true,
+            profileImage: true,
+          },
+        },
+      },
+    });
+
+    if (!company) {
+      throw new NotFoundException('업체를 찾을 수 없습니다.');
+    }
+
+    return company;
   }
 
-  // TODO: 업체 목록 조회
   async findAll(page: number, limit: number) {
-    // TODO: 구현 예정
-    return [];
+    const skip = (page - 1) * limit;
+
+    const [companies, total] = await Promise.all([
+      this.prisma.company.findMany({
+        where: {
+          verificationStatus: 'APPROVED',
+          isActive: true,
+        },
+        skip,
+        take: limit,
+        orderBy: { averageRating: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              profileImage: true,
+            },
+          },
+        },
+      }),
+      this.prisma.company.count({
+        where: {
+          verificationStatus: 'APPROVED',
+          isActive: true,
+        },
+      }),
+    ]);
+
+    return {
+      data: companies,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
-  // TODO: 업체 정보 수정
-  async update(id: string, data: any) {
-    // TODO: 구현 예정
-    return null;
+  async update(id: string, data: UpdateCompanyDto, userId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id },
+    });
+
+    if (!company) {
+      throw new NotFoundException('업체를 찾을 수 없습니다.');
+    }
+
+    if (company.userId !== userId) {
+      throw new ForbiddenException('본인 업체만 수정할 수 있습니다.');
+    }
+
+    return this.prisma.company.update({
+      where: { id },
+      data,
+    });
   }
 
-  // TODO: 업체 승인/반려 (관리자)
   async updateApprovalStatus(id: string, status: string) {
-    // TODO: 구현 예정
-    return null;
+    const company = await this.prisma.company.findUnique({
+      where: { id },
+    });
+
+    if (!company) {
+      throw new NotFoundException('업체를 찾을 수 없습니다.');
+    }
+
+    return this.prisma.company.update({
+      where: { id },
+      data: { verificationStatus: status as any },
+    });
   }
 }
