@@ -124,7 +124,7 @@ export class AuthService {
           description,
           minPrice,
           maxPrice,
-          verificationStatus: 'PENDING',
+          verificationStatus: 'APPROVED',
         },
       });
 
