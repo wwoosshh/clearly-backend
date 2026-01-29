@@ -1,0 +1,358 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================
+// Enums
+// ==================
+
+enum UserRole {
+  USER
+  COMPANY
+  ADMIN
+}
+
+enum OAuthProvider {
+  LOCAL
+  KAKAO
+  NAVER
+  GOOGLE
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum MatchingStatus {
+  REQUESTED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum CleaningType {
+  MOVE_IN
+  MOVE_OUT
+  FULL
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  SYSTEM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PAST_DUE
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum NotificationType {
+  MATCHING_REQUEST
+  MATCHING_ACCEPTED
+  MATCHING_REJECTED
+  NEW_MESSAGE
+  NEW_REVIEW
+  SUBSCRIPTION
+  SYSTEM
+}
+
+enum ReportReason {
+  FRAUD
+  INAPPROPRIATE
+  NO_SHOW
+  POOR_QUALITY
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  RESOLVED
+  DISMISSED
+}
+
+enum ReportTargetType {
+  USER
+  COMPANY
+  REVIEW
+}
+
+// ==================
+// Models
+// ==================
+
+model User {
+  id            String        @id @default(uuid())
+  email         String        @unique
+  passwordHash  String?       @map("password_hash")
+  name          String        @db.VarChar(50)
+  phone         String?       @db.VarChar(20)
+  profileImage  String?       @map("profile_image") @db.VarChar(500)
+  role          UserRole      @default(USER)
+  oauthProvider OAuthProvider @default(LOCAL) @map("oauth_provider")
+  oauthId       String?       @map("oauth_id") @db.VarChar(255)
+  isActive      Boolean       @default(true) @map("is_active")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  company             Company?
+  matchings           Matching[]
+  chatRoomsAsUser     ChatRoom[]    @relation("UserChatRooms")
+  chatMessages        ChatMessage[]
+  reviews             Review[]
+  notifications       Notification[]
+  reportsFiled        Report[]      @relation("ReporterReports")
+  refreshTokens       RefreshToken[]
+
+  @@unique([oauthProvider, oauthId])
+  @@index([email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+model Company {
+  id                 String             @id @default(uuid())
+  userId             String             @unique @map("user_id")
+  businessName       String             @map("business_name") @db.VarChar(100)
+  businessNumber     String             @unique @map("business_number") @db.VarChar(20)
+  representative     String             @db.VarChar(50)
+  address            String?            @db.VarChar(300)
+  detailAddress      String?            @map("detail_address") @db.VarChar(200)
+  latitude           Decimal?           @db.Decimal(10, 7)
+  longitude          Decimal?           @db.Decimal(10, 7)
+  serviceAreas       Json?              @map("service_areas")
+  description        String?            @db.Text
+  profileImages      Json?              @map("profile_images")
+  certificates       Json?
+  minPrice           Int?               @map("min_price")
+  maxPrice           Int?               @map("max_price")
+  specialties        Json?
+  verificationStatus VerificationStatus @default(PENDING) @map("verification_status")
+  rejectionReason    String?            @map("rejection_reason") @db.Text
+  averageRating      Decimal            @default(0.0) @map("average_rating") @db.Decimal(2, 1)
+  totalReviews       Int                @default(0) @map("total_reviews")
+  totalMatchings     Int                @default(0) @map("total_matchings")
+  responseTime       Int?               @map("response_time")
+  isActive           Boolean            @default(true) @map("is_active")
+  approvedAt         DateTime?          @map("approved_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matchings     Matching[]
+  chatRooms     ChatRoom[]
+  reviews       Review[]
+  subscriptions CompanySubscription[]
+
+  @@index([verificationStatus])
+  @@index([averageRating(sort: Desc)])
+  @@index([isActive])
+  @@map("companies")
+}
+
+model Matching {
+  id             String         @id @default(uuid())
+  userId         String         @map("user_id")
+  companyId      String         @map("company_id")
+  status         MatchingStatus @default(REQUESTED)
+  cleaningType   CleaningType   @map("cleaning_type")
+  address        String         @db.VarChar(300)
+  detailAddress  String?        @map("detail_address") @db.VarChar(200)
+  areaSize       Int?           @map("area_size")
+  desiredDate    DateTime?      @map("desired_date") @db.Date
+  desiredTime    String?        @map("desired_time") @db.VarChar(10)
+  message        String?        @db.Text
+  estimatedPrice Int?           @map("estimated_price")
+  rejectionReason String?       @map("rejection_reason") @db.Text
+  completedAt    DateTime?      @map("completed_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id])
+  company  Company   @relation(fields: [companyId], references: [id])
+  chatRoom ChatRoom?
+  review   Review?
+
+  @@index([userId, status])
+  @@index([companyId, status])
+  @@index([createdAt(sort: Desc)])
+  @@map("matchings")
+}
+
+model ChatRoom {
+  id          String    @id @default(uuid())
+  matchingId  String    @unique @map("matching_id")
+  userId      String    @map("user_id")
+  companyId   String    @map("company_id")
+  isActive    Boolean   @default(true) @map("is_active")
+  lastMessage String?   @map("last_message") @db.Text
+  lastSentAt  DateTime? @map("last_sent_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  matching Matching      @relation(fields: [matchingId], references: [id])
+  user     User          @relation("UserChatRooms", fields: [userId], references: [id])
+  company  Company       @relation(fields: [companyId], references: [id])
+  messages ChatMessage[]
+
+  @@index([userId])
+  @@index([companyId])
+  @@map("chat_rooms")
+}
+
+model ChatMessage {
+  id          String      @id @default(uuid())
+  roomId      String      @map("room_id")
+  senderId    String      @map("sender_id")
+  content     String      @db.Text
+  messageType MessageType @default(TEXT) @map("message_type")
+  fileUrl     String?     @map("file_url") @db.VarChar(500)
+  isRead      Boolean     @default(false) @map("is_read")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  room   ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender User     @relation(fields: [senderId], references: [id])
+
+  @@index([roomId, createdAt(sort: Desc)])
+  @@index([senderId])
+  @@map("chat_messages")
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  matchingId String   @unique @map("matching_id")
+  userId     String   @map("user_id")
+  companyId  String   @map("company_id")
+  rating     Int      @db.SmallInt
+  content    String?  @db.Text
+  images     Json?
+  isVisible  Boolean  @default(true) @map("is_visible")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  matching Matching @relation(fields: [matchingId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+  company  Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, createdAt(sort: Desc)])
+  @@map("reviews")
+}
+
+model SubscriptionPlan {
+  id             String  @id @default(uuid())
+  name           String  @db.VarChar(50)
+  price          Int
+  maxMatchings   Int?    @map("max_matchings")
+  features       Json?
+  priorityWeight Decimal @default(1.0) @map("priority_weight") @db.Decimal(3, 2)
+  isActive       Boolean @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  subscriptions CompanySubscription[]
+
+  @@map("subscription_plans")
+}
+
+model CompanySubscription {
+  id                 String             @id @default(uuid())
+  companyId          String             @map("company_id")
+  planId             String             @map("plan_id")
+  status             SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime           @map("current_period_start")
+  currentPeriodEnd   DateTime           @map("current_period_end")
+  paymentMethod      String?            @map("payment_method") @db.VarChar(50)
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  company  Company          @relation(fields: [companyId], references: [id])
+  plan     SubscriptionPlan @relation(fields: [planId], references: [id])
+  payments Payment[]
+
+  @@index([companyId])
+  @@index([status])
+  @@map("company_subscriptions")
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  subscriptionId String        @map("subscription_id")
+  amount         Int
+  status         PaymentStatus @default(PENDING)
+  paymentMethod  String?       @map("payment_method") @db.VarChar(50)
+  paymentKey     String?       @map("payment_key") @db.VarChar(200)
+  receiptUrl     String?       @map("receipt_url") @db.VarChar(500)
+  paidAt         DateTime?     @map("paid_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  subscription CompanySubscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId])
+  @@map("payments")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  type      NotificationType
+  title     String           @db.VarChar(200)
+  content   String?          @db.Text
+  data      Json?
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model Report {
+  id          String           @id @default(uuid())
+  reporterId  String           @map("reporter_id")
+  targetType  ReportTargetType @map("target_type")
+  targetId    String           @map("target_id")
+  reason      ReportReason
+  description String?          @db.Text
+  status      ReportStatus     @default(PENDING)
+  adminNote   String?          @map("admin_note") @db.Text
+  createdAt   DateTime         @default(now()) @map("created_at")
+  resolvedAt  DateTime?        @map("resolved_at")
+
+  reporter User @relation("ReporterReports", fields: [reporterId], references: [id])
+
+  @@index([status])
+  @@index([targetType, targetId])
+  @@map("reports")
+}
