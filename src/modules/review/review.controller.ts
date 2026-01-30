@@ -18,6 +18,7 @@ import {
 import { ReviewService } from './review.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CreateReviewDto } from './dto/create-review.dto';
 
 @ApiTags('리뷰')
 @Controller('reviews')
@@ -31,9 +32,9 @@ export class ReviewController {
   @ApiResponse({ status: 201, description: '리뷰 작성 성공' })
   async create(
     @CurrentUser('id') userId: string,
-    @Body() createReviewDto: any,
+    @Body() dto: CreateReviewDto,
   ) {
-    return this.reviewService.create(userId, createReviewDto);
+    return this.reviewService.create(userId, dto);
   }
 
   @Get('company/:companyId')
@@ -41,10 +42,10 @@ export class ReviewController {
   @ApiResponse({ status: 200, description: '리뷰 목록 조회 성공' })
   async findByCompany(
     @Param('companyId') companyId: string,
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 10,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
   ) {
-    return this.reviewService.findByCompany(companyId, page, limit);
+    return this.reviewService.findByCompany(companyId, page || 1, limit || 10);
   }
 
   @Get(':id')
@@ -62,9 +63,9 @@ export class ReviewController {
   async update(
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
-    @Body() updateReviewDto: any,
+    @Body() body: { rating?: number; content?: string },
   ) {
-    return this.reviewService.update(id, userId, updateReviewDto);
+    return this.reviewService.update(id, userId, body);
   }
 
   @Delete(':id')

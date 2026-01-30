@@ -85,6 +85,16 @@ export class ChatController {
     return this.chatService.markAsRead(roomId, userId);
   }
 
+  @Patch('rooms/:id/complete')
+  @ApiOperation({ summary: '거래완료' })
+  @ApiResponse({ status: 200, description: '거래완료 처리 성공' })
+  async completeTransaction(
+    @Param('id') roomId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.chatService.completeTransaction(roomId, userId);
+  }
+
   @Patch('rooms/:id/decline')
   @ApiOperation({ summary: '거래안함' })
   @ApiResponse({ status: 200, description: '거래안함 처리 성공' })

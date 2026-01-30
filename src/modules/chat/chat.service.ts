@@ -243,6 +243,62 @@ export class ChatService {
     return { count: result.count };
   }
 
+  /** 거래완료 처리 */
+  async completeTransaction(roomId: string, userId: string) {
+    const room = await this.prisma.chatRoom.findUnique({
+      where: { id: roomId },
+      include: { company: true, matching: true },
+    });
+
+    if (!room) {
+      throw new NotFoundException('채팅방을 찾을 수 없습니다.');
+    }
+
+    // 일반 유저만 거래완료 가능
+    if (room.userId !== userId) {
+      throw new ForbiddenException('고객만 거래완료를 할 수 있습니다.');
+    }
+
+    if (!room.matching) {
+      throw new BadRequestException('매칭 정보가 없는 채팅방입니다.');
+    }
+
+    if (room.matching.status === 'COMPLETED') {
+      throw new BadRequestException('이미 거래가 완료된 건입니다.');
+    }
+
+    if (room.matching.status !== 'ACCEPTED') {
+      throw new BadRequestException('수락된 매칭만 거래완료 처리할 수 있습니다.');
+    }
+
+    // 매칭 상태를 COMPLETED로 변경
+    const matching = await this.prisma.matching.update({
+      where: { id: room.matching.id },
+      data: {
+        status: 'COMPLETED',
+        completedAt: new Date(),
+      },
+    });
+
+    // 시스템 메시지
+    await this.sendMessage(
+      roomId,
+      userId,
+      '거래가 완료되었습니다. 리뷰를 작성해주세요.',
+      'SYSTEM',
+    );
+
+    this.logger.log(
+      `거래완료: roomId=${roomId}, matchingId=${matching.id}`,
+    );
+
+    return {
+      matchingId: matching.id,
+      companyId: room.companyId,
+      completed: true,
+    };
+  }
+
   /** 거래안함 처리 */
   async declineRoom(roomId: string, userId: string) {
     const room = await this.prisma.chatRoom.findUnique({
