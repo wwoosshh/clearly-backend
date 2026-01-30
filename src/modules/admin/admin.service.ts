@@ -112,53 +112,99 @@ export class AdminService {
       throw new NotFoundException('사용자를 찾을 수 없습니다.');
     }
 
-    const [recentMatchings, recentReviews, recentReports, estimateRequests] =
-      await Promise.all([
-        this.prisma.matching.findMany({
-          where: { userId },
+    const isCompany = user.role === 'COMPANY' && user.company;
+    const companyId = user.company?.id;
+
+    // 매칭: 일반 유저는 userId, 업체는 companyId로 조회
+    const matchingWhere = isCompany
+      ? { companyId }
+      : { userId };
+
+    // 리뷰: 일반 유저는 userId(작성자), 업체는 companyId(대상)
+    const reviewWhere = isCompany
+      ? { companyId }
+      : { userId };
+
+    // 신고: 본인이 신고하거나 신고당한 것 (업체일 경우 companyId도 포함)
+    const reportOrConditions: any[] = [
+      { reporterId: userId },
+      { targetType: 'USER', targetId: userId },
+    ];
+    if (isCompany && companyId) {
+      reportOrConditions.push({ targetType: 'COMPANY', targetId: companyId });
+    }
+
+    const queries: Promise<any>[] = [
+      this.prisma.matching.findMany({
+        where: matchingWhere,
+        take: 10,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          company: {
+            select: { id: true, businessName: true },
+          },
+        },
+      }),
+      this.prisma.review.findMany({
+        where: reviewWhere,
+        take: 10,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: { select: { id: true, name: true } },
+          company: {
+            select: { id: true, businessName: true },
+          },
+        },
+      }),
+      this.prisma.report.findMany({
+        where: { OR: reportOrConditions },
+        take: 10,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          reporter: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+      }),
+      this.prisma.estimateRequest.findMany({
+        where: { userId },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+      }),
+    ];
+
+    // 업체일 경우 제출한 견적도 함께 조회
+    if (isCompany && companyId) {
+      queries.push(
+        this.prisma.estimate.findMany({
+          where: { companyId },
           take: 10,
           orderBy: { createdAt: 'desc' },
           include: {
-            company: {
-              select: { id: true, businessName: true },
+            estimateRequest: {
+              select: {
+                id: true,
+                cleaningType: true,
+                address: true,
+                status: true,
+                user: { select: { id: true, name: true } },
+              },
             },
           },
         }),
-        this.prisma.review.findMany({
-          where: { userId },
-          take: 10,
-          orderBy: { createdAt: 'desc' },
-          include: {
-            company: {
-              select: { id: true, businessName: true },
-            },
-          },
-        }),
-        this.prisma.report.findMany({
-          where: {
-            OR: [{ reporterId: userId }, { targetType: 'USER', targetId: userId }],
-          },
-          take: 10,
-          orderBy: { createdAt: 'desc' },
-          include: {
-            reporter: {
-              select: { id: true, name: true, email: true },
-            },
-          },
-        }),
-        this.prisma.estimateRequest.findMany({
-          where: { userId },
-          take: 5,
-          orderBy: { createdAt: 'desc' },
-        }),
-      ]);
+      );
+    }
+
+    const results = await Promise.all(queries);
 
     return {
       ...user,
-      recentMatchings,
-      recentReviews,
-      recentReports,
-      estimateRequests,
+      recentMatchings: results[0],
+      recentReviews: results[1],
+      recentReports: results[2],
+      estimateRequests: results[3],
+      recentEstimates: results[4] ?? [],
     };
   }
 
