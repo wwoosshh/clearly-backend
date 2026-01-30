@@ -67,6 +67,46 @@ export class AdminService {
     };
   }
 
+  async getCompanies(page: number, limit: number, status?: string) {
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (status) {
+      where.verificationStatus = status;
+    }
+
+    const [companies, total] = await Promise.all([
+      this.prisma.company.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              phone: true,
+              isActive: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.company.count({ where }),
+    ]);
+
+    return {
+      data: companies,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
   async approveCompany(companyId: string) {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },

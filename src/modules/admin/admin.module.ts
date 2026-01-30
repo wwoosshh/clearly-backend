@@ -1,13 +1,11 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
-import { AdminCronService } from './admin-cron.service';
+import { AdminBootstrapService } from './admin-bootstrap.service';
 
 @Module({
-  imports: [ScheduleModule],
   controllers: [AdminController],
-  providers: [AdminService, AdminCronService],
+  providers: [AdminService, AdminBootstrapService],
   exports: [AdminService],
 })
 export class AdminModule {}

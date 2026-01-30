@@ -45,6 +45,17 @@ export class AdminController {
     return this.adminService.getUsers(page, limit, filters);
   }
 
+  @Get('companies')
+  @ApiOperation({ summary: '업체 목록 조회' })
+  @ApiResponse({ status: 200, description: '업체 목록 조회 성공' })
+  async getCompanies(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+    @Query('status') status?: string,
+  ) {
+    return this.adminService.getCompanies(page, limit, status);
+  }
+
   @Patch('companies/:companyId/approve')
   @ApiOperation({ summary: '업체 승인' })
   @ApiResponse({ status: 200, description: '업체 승인 성공' })
