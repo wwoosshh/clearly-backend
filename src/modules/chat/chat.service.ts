@@ -81,6 +81,17 @@ export class ChatService {
       throw new ForbiddenException('이 채팅방에 메시지를 보낼 수 없습니다.');
     }
 
+    // 양측 거래취소 시 시스템 메시지만 허용
+    if (
+      room.userDeclined &&
+      room.companyDeclined &&
+      messageType !== 'SYSTEM'
+    ) {
+      throw new BadRequestException(
+        '거래가 취소된 채팅방에서는 메시지를 보낼 수 없습니다.',
+      );
+    }
+
     // 메시지 생성 + 채팅방 마지막 메시지 업데이트
     const [message] = await this.prisma.$transaction([
       this.prisma.chatMessage.create({
