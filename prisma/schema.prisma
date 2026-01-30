@@ -44,6 +44,12 @@ enum CleaningType {
   MOVE_IN
   MOVE_OUT
   FULL
+  OFFICE
+  STORE
+  CONSTRUCTION
+  AIRCON
+  CARPET
+  EXTERIOR
 }
 
 enum MessageType {
@@ -98,6 +104,31 @@ enum ReportTargetType {
   REVIEW
 }
 
+enum EstimateRequestStatus {
+  OPEN
+  CLOSED
+  EXPIRED
+}
+
+enum EstimateStatus {
+  SUBMITTED
+  ACCEPTED
+  REJECTED
+}
+
+enum PointTransactionType {
+  CHARGE
+  USE
+  REFUND
+}
+
+enum RefundStatus {
+  NONE
+  REQUESTED
+  APPROVED
+  REJECTED
+}
+
 // ==================
 // Models
 // ==================
@@ -124,6 +155,7 @@ model User {
   notifications       Notification[]
   reportsFiled        Report[]      @relation("ReporterReports")
   refreshTokens       RefreshToken[]
+  estimateRequests    EstimateRequest[]
 
   @@unique([oauthProvider, oauthId])
   @@index([email])
@@ -177,6 +209,8 @@ model Company {
   chatRooms     ChatRoom[]
   reviews       Review[]
   subscriptions CompanySubscription[]
+  estimates     Estimate[]
+  pointWallet   PointWallet?
 
   @@index([verificationStatus])
   @@index([averageRating(sort: Desc)])
@@ -187,7 +221,7 @@ model Company {
 model Matching {
   id             String         @id @default(uuid())
   userId         String         @map("user_id")
-  companyId      String         @map("company_id")
+  companyId      String?        @map("company_id")
   status         MatchingStatus @default(REQUESTED)
   cleaningType   CleaningType   @map("cleaning_type")
   address        String         @db.VarChar(300)
@@ -198,12 +232,14 @@ model Matching {
   message        String?        @db.Text
   estimatedPrice Int?           @map("estimated_price")
   rejectionReason String?       @map("rejection_reason") @db.Text
+  estimateId     String?        @unique @map("estimate_id")
   completedAt    DateTime?      @map("completed_at")
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
   user     User      @relation(fields: [userId], references: [id])
-  company  Company   @relation(fields: [companyId], references: [id])
+  company  Company?  @relation(fields: [companyId], references: [id])
+  estimate Estimate? @relation(fields: [estimateId], references: [id])
   chatRoom ChatRoom?
   review   Review?
 
@@ -214,19 +250,24 @@ model Matching {
 }
 
 model ChatRoom {
-  id          String    @id @default(uuid())
-  matchingId  String    @unique @map("matching_id")
-  userId      String    @map("user_id")
-  companyId   String    @map("company_id")
-  isActive    Boolean   @default(true) @map("is_active")
-  lastMessage String?   @map("last_message") @db.Text
-  lastSentAt  DateTime? @map("last_sent_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
+  id              String       @id @default(uuid())
+  matchingId      String?      @unique @map("matching_id")
+  userId          String       @map("user_id")
+  companyId       String       @map("company_id")
+  isActive        Boolean      @default(true) @map("is_active")
+  lastMessage     String?      @map("last_message") @db.Text
+  lastSentAt      DateTime?    @map("last_sent_at")
+  userDeclined    Boolean      @default(false) @map("user_declined")
+  companyDeclined Boolean      @default(false) @map("company_declined")
+  refundStatus    RefundStatus @default(NONE) @map("refund_status")
+  estimateId      String?      @unique @map("estimate_id")
+  createdAt       DateTime     @default(now()) @map("created_at")
 
-  matching Matching      @relation(fields: [matchingId], references: [id])
-  user     User          @relation("UserChatRooms", fields: [userId], references: [id])
-  company  Company       @relation(fields: [companyId], references: [id])
-  messages ChatMessage[]
+  matching  Matching?     @relation(fields: [matchingId], references: [id])
+  user      User          @relation("UserChatRooms", fields: [userId], references: [id])
+  company   Company       @relation(fields: [companyId], references: [id])
+  estimate  Estimate?     @relation(fields: [estimateId], references: [id])
+  messages  ChatMessage[]
 
   @@index([userId])
   @@index([companyId])
@@ -356,4 +397,81 @@ model Report {
   @@index([status])
   @@index([targetType, targetId])
   @@map("reports")
+}
+
+// ==================
+// 견적 / 포인트 시스템
+// ==================
+
+model EstimateRequest {
+  id            String                @id @default(uuid())
+  userId        String                @map("user_id")
+  cleaningType  CleaningType          @map("cleaning_type")
+  address       String                @db.VarChar(300)
+  detailAddress String?               @map("detail_address") @db.VarChar(200)
+  areaSize      Int?                  @map("area_size")
+  desiredDate   DateTime?             @map("desired_date") @db.Date
+  desiredTime   String?               @map("desired_time") @db.VarChar(10)
+  message       String                @db.Text
+  budget        Int?
+  status        EstimateRequestStatus @default(OPEN)
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+
+  user      User       @relation(fields: [userId], references: [id])
+  estimates Estimate[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([userId])
+  @@map("estimate_requests")
+}
+
+model Estimate {
+  id                String         @id @default(uuid())
+  estimateRequestId String         @map("estimate_request_id")
+  companyId         String         @map("company_id")
+  price             Int
+  message           String?        @db.Text
+  estimatedDuration String?        @map("estimated_duration") @db.VarChar(50)
+  availableDate     DateTime?      @map("available_date") @db.Date
+  pointsUsed        Int            @default(0) @map("points_used")
+  status            EstimateStatus @default(SUBMITTED)
+  createdAt         DateTime       @default(now()) @map("created_at")
+
+  estimateRequest EstimateRequest @relation(fields: [estimateRequestId], references: [id])
+  company         Company         @relation(fields: [companyId], references: [id])
+  matching        Matching?
+  chatRoom        ChatRoom?
+
+  @@index([estimateRequestId])
+  @@index([companyId])
+  @@map("estimates")
+}
+
+model PointWallet {
+  id        String   @id @default(uuid())
+  companyId String   @unique @map("company_id")
+  balance   Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company      Company            @relation(fields: [companyId], references: [id])
+  transactions PointTransaction[]
+
+  @@map("point_wallets")
+}
+
+model PointTransaction {
+  id          String               @id @default(uuid())
+  walletId    String               @map("wallet_id")
+  type        PointTransactionType
+  amount      Int
+  description String?              @db.VarChar(200)
+  relatedId   String?              @map("related_id")
+  createdAt   DateTime             @default(now()) @map("created_at")
+
+  wallet PointWallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, createdAt(sort: Desc)])
+  @@map("point_transactions")
 }

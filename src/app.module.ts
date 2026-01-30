@@ -14,6 +14,8 @@ import { SubscriptionModule } from './modules/subscription/subscription.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { UploadModule } from './modules/upload/upload.module';
+import { PointModule } from './modules/point/point.module';
+import { EstimateModule } from './modules/estimate/estimate.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { UploadModule } from './modules/upload/upload.module';
     NotificationModule,
     AdminModule,
     UploadModule,
+    PointModule,
+    EstimateModule,
   ],
   controllers: [AppController],
   providers: [AppService],

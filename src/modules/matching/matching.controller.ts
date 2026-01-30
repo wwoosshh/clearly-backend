@@ -38,7 +38,15 @@ export class MatchingController {
   @Get('requests')
   @ApiOperation({ summary: '매칭 요청 목록 조회' })
   @ApiResponse({ status: 200, description: '매칭 요청 목록 조회 성공' })
-  async findRequests(@Query() filters: any) {
+  async findRequests(
+    @CurrentUser('id') userId: string,
+    @CurrentUser() user: any,
+    @Query() filters: any,
+  ) {
+    // 역할에 따라 필터 자동 적용
+    if (user.role === 'USER') {
+      filters.userId = userId;
+    }
     return this.matchingService.findRequests(filters);
   }
 
@@ -49,24 +57,13 @@ export class MatchingController {
     return this.matchingService.findRequestById(id);
   }
 
-  @Post('requests/:requestId/quotes')
-  @ApiOperation({ summary: '견적 제출' })
-  @ApiResponse({ status: 201, description: '견적 제출 성공' })
-  async submitQuote(
-    @CurrentUser('id') companyId: string,
-    @Param('requestId') requestId: string,
-    @Body() quoteDto: any,
+  @Patch('requests/:id/status')
+  @ApiOperation({ summary: '매칭 상태 변경' })
+  @ApiResponse({ status: 200, description: '매칭 상태 변경 성공' })
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() body: { status: string },
   ) {
-    return this.matchingService.submitQuote(companyId, requestId, quoteDto);
-  }
-
-  @Patch('quotes/:quoteId/accept')
-  @ApiOperation({ summary: '견적 수락' })
-  @ApiResponse({ status: 200, description: '견적 수락 성공' })
-  async acceptQuote(
-    @CurrentUser('id') userId: string,
-    @Param('quoteId') quoteId: string,
-  ) {
-    return this.matchingService.acceptQuote(userId, quoteId);
+    return this.matchingService.updateStatus(id, body.status);
   }
 }

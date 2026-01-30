@@ -1,0 +1,327 @@
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { PointService } from '../point/point.service';
+import { ChatService } from '../chat/chat.service';
+import { CreateEstimateRequestDto } from './dto/create-estimate-request.dto';
+import { SubmitEstimateDto } from './dto/submit-estimate.dto';
+
+const ESTIMATE_POINT_COST = 100; // 견적 제출 시 차감 포인트
+
+@Injectable()
+export class EstimateService {
+  private readonly logger = new Logger(EstimateService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pointService: PointService,
+    private readonly chatService: ChatService,
+  ) {}
+
+  /** 견적요청 생성 (USER) */
+  async createEstimateRequest(userId: string, dto: CreateEstimateRequestDto) {
+    const request = await this.prisma.estimateRequest.create({
+      data: {
+        userId,
+        cleaningType: dto.cleaningType,
+        address: dto.address,
+        detailAddress: dto.detailAddress,
+        areaSize: dto.areaSize,
+        desiredDate: dto.desiredDate ? new Date(dto.desiredDate) : undefined,
+        desiredTime: dto.desiredTime,
+        message: dto.message,
+        budget: dto.budget,
+      },
+      include: {
+        user: { select: { id: true, name: true } },
+      },
+    });
+
+    this.logger.log(`견적요청 생성: id=${request.id}, userId=${userId}`);
+    return request;
+  }
+
+  /** 견적요청 목록 (업체용: OPEN 전체, 유저용: 본인 것) */
+  async getEstimateRequests(
+    userId: string,
+    role: string,
+    page = 1,
+    limit = 10,
+  ) {
+    const where: any = {};
+
+    if (role === 'USER') {
+      where.userId = userId;
+    } else if (role === 'COMPANY') {
+      where.status = 'OPEN';
+    }
+
+    const [requests, total] = await Promise.all([
+      this.prisma.estimateRequest.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          user: { select: { id: true, name: true } },
+          estimates: {
+            include: {
+              company: {
+                select: { id: true, businessName: true },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.estimateRequest.count({ where }),
+    ]);
+
+    return {
+      data: requests,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  /** 견적요청 상세 */
+  async getEstimateRequestById(id: string) {
+    const request = await this.prisma.estimateRequest.findUnique({
+      where: { id },
+      include: {
+        user: { select: { id: true, name: true, phone: true } },
+        estimates: {
+          include: {
+            company: {
+              select: {
+                id: true,
+                businessName: true,
+                averageRating: true,
+                totalReviews: true,
+                user: { select: { id: true, name: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!request) {
+      throw new NotFoundException('견적요청을 찾을 수 없습니다.');
+    }
+
+    return request;
+  }
+
+  /** 견적 제출 (COMPANY, 포인트 차감) */
+  async submitEstimate(
+    userId: string,
+    estimateRequestId: string,
+    dto: SubmitEstimateDto,
+  ) {
+    // 업체 정보 조회
+    const company = await this.prisma.company.findUnique({
+      where: { userId },
+    });
+    if (!company) {
+      throw new NotFoundException('업체 정보를 찾을 수 없습니다.');
+    }
+
+    // 견적요청 확인
+    const request = await this.prisma.estimateRequest.findUnique({
+      where: { id: estimateRequestId },
+    });
+    if (!request) {
+      throw new NotFoundException('견적요청을 찾을 수 없습니다.');
+    }
+    if (request.status !== 'OPEN') {
+      throw new BadRequestException('마감된 견적요청입니다.');
+    }
+
+    // 이미 제출한 견적 확인
+    const existing = await this.prisma.estimate.findFirst({
+      where: {
+        estimateRequestId,
+        companyId: company.id,
+      },
+    });
+    if (existing) {
+      throw new BadRequestException('이미 견적을 제출하셨습니다.');
+    }
+
+    // 포인트 차감
+    await this.pointService.usePoints(
+      company.id,
+      ESTIMATE_POINT_COST,
+      '견적 제출',
+      estimateRequestId,
+    );
+
+    // 견적 생성
+    const estimate = await this.prisma.estimate.create({
+      data: {
+        estimateRequestId,
+        companyId: company.id,
+        price: dto.price,
+        message: dto.message,
+        estimatedDuration: dto.estimatedDuration,
+        availableDate: dto.availableDate
+          ? new Date(dto.availableDate)
+          : undefined,
+        pointsUsed: ESTIMATE_POINT_COST,
+      },
+      include: {
+        company: {
+          select: { id: true, businessName: true },
+        },
+        estimateRequest: {
+          select: { id: true, cleaningType: true, address: true, userId: true },
+        },
+      },
+    });
+
+    this.logger.log(
+      `견적 제출: id=${estimate.id}, companyId=${company.id}, requestId=${estimateRequestId}`,
+    );
+
+    return estimate;
+  }
+
+  /** 내가 받은 견적 목록 (유저용 매칭내역) */
+  async getMyEstimates(userId: string, page = 1, limit = 10) {
+    const [estimates, total] = await Promise.all([
+      this.prisma.estimate.findMany({
+        where: {
+          estimateRequest: { userId },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          company: {
+            select: {
+              id: true,
+              businessName: true,
+              averageRating: true,
+              totalReviews: true,
+              user: { select: { id: true, name: true } },
+            },
+          },
+          estimateRequest: {
+            select: {
+              id: true,
+              cleaningType: true,
+              address: true,
+              desiredDate: true,
+              status: true,
+            },
+          },
+        },
+      }),
+      this.prisma.estimate.count({
+        where: { estimateRequest: { userId } },
+      }),
+    ]);
+
+    return {
+      data: estimates,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  /** 견적 수락 → Matching + ChatRoom 생성 (USER) */
+  async acceptEstimate(userId: string, estimateId: string) {
+    const estimate = await this.prisma.estimate.findUnique({
+      where: { id: estimateId },
+      include: {
+        estimateRequest: true,
+        company: true,
+      },
+    });
+
+    if (!estimate) {
+      throw new NotFoundException('견적을 찾을 수 없습니다.');
+    }
+
+    if (estimate.estimateRequest.userId !== userId) {
+      throw new ForbiddenException('본인의 견적요청에 대한 견적만 수락할 수 있습니다.');
+    }
+
+    if (estimate.status !== 'SUBMITTED') {
+      throw new BadRequestException('이미 처리된 견적입니다.');
+    }
+
+    // 트랜잭션: 견적 수락 + 매칭 생성 + 채팅방 생성 + 견적요청 마감
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. 견적 상태 변경
+      const updatedEstimate = await tx.estimate.update({
+        where: { id: estimateId },
+        data: { status: 'ACCEPTED' },
+      });
+
+      // 2. 같은 요청의 다른 견적 거절 처리
+      await tx.estimate.updateMany({
+        where: {
+          estimateRequestId: estimate.estimateRequestId,
+          id: { not: estimateId },
+          status: 'SUBMITTED',
+        },
+        data: { status: 'REJECTED' },
+      });
+
+      // 3. 매칭 생성
+      const matching = await tx.matching.create({
+        data: {
+          userId,
+          companyId: estimate.companyId,
+          estimateId,
+          cleaningType: estimate.estimateRequest.cleaningType,
+          address: estimate.estimateRequest.address,
+          detailAddress: estimate.estimateRequest.detailAddress,
+          areaSize: estimate.estimateRequest.areaSize,
+          desiredDate: estimate.estimateRequest.desiredDate,
+          desiredTime: estimate.estimateRequest.desiredTime,
+          message: estimate.estimateRequest.message,
+          estimatedPrice: estimate.price,
+          status: 'ACCEPTED',
+        },
+      });
+
+      // 4. 채팅방 생성
+      const chatRoom = await tx.chatRoom.create({
+        data: {
+          matchingId: matching.id,
+          userId,
+          companyId: estimate.companyId,
+          estimateId,
+        },
+      });
+
+      // 5. 견적요청 마감
+      await tx.estimateRequest.update({
+        where: { id: estimate.estimateRequestId },
+        data: { status: 'CLOSED' },
+      });
+
+      return { estimate: updatedEstimate, matching, chatRoom };
+    });
+
+    // 시스템 메시지 생성
+    await this.chatService.sendMessage(
+      result.chatRoom.id,
+      userId,
+      `견적이 수락되었습니다. 견적 금액: ${estimate.price.toLocaleString()}원`,
+      'SYSTEM',
+    );
+
+    this.logger.log(
+      `견적 수락: estimateId=${estimateId}, matchingId=${result.matching.id}, chatRoomId=${result.chatRoom.id}`,
+    );
+
+    return result;
+  }
+}
