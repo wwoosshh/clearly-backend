@@ -324,4 +324,79 @@ export class EstimateService {
 
     return result;
   }
+
+  /** 견적 거부 (USER) */
+  async rejectEstimate(userId: string, estimateId: string) {
+    const estimate = await this.prisma.estimate.findUnique({
+      where: { id: estimateId },
+      include: { estimateRequest: true },
+    });
+
+    if (!estimate) {
+      throw new NotFoundException('견적을 찾을 수 없습니다.');
+    }
+
+    if (estimate.estimateRequest.userId !== userId) {
+      throw new ForbiddenException(
+        '본인의 견적요청에 대한 견적만 거부할 수 있습니다.',
+      );
+    }
+
+    if (estimate.status !== 'SUBMITTED') {
+      throw new BadRequestException('이미 처리된 견적입니다.');
+    }
+
+    const updated = await this.prisma.estimate.update({
+      where: { id: estimateId },
+      data: { status: 'REJECTED' },
+    });
+
+    this.logger.log(`견적 거부: estimateId=${estimateId}, userId=${userId}`);
+
+    return updated;
+  }
+
+  /** 업체가 제출한 견적 목록 (COMPANY) */
+  async getCompanyEstimates(userId: string, page = 1, limit = 10) {
+    const company = await this.prisma.company.findUnique({
+      where: { userId },
+    });
+    if (!company) {
+      throw new NotFoundException('업체 정보를 찾을 수 없습니다.');
+    }
+
+    const where = { companyId: company.id };
+
+    const [estimates, total] = await Promise.all([
+      this.prisma.estimate.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          estimateRequest: {
+            select: {
+              id: true,
+              cleaningType: true,
+              address: true,
+              detailAddress: true,
+              areaSize: true,
+              desiredDate: true,
+              desiredTime: true,
+              message: true,
+              budget: true,
+              status: true,
+              user: { select: { id: true, name: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.estimate.count({ where }),
+    ]);
+
+    return {
+      data: estimates,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
 }

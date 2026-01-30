@@ -101,4 +101,33 @@ export class EstimateController {
   ) {
     return this.estimateService.acceptEstimate(userId, estimateId);
   }
+
+  @Patch(':id/reject')
+  @UseGuards(RolesGuard)
+  @Roles('USER')
+  @ApiOperation({ summary: '견적 거부' })
+  @ApiResponse({ status: 200, description: '견적 거부 성공' })
+  async rejectEstimate(
+    @CurrentUser('id') userId: string,
+    @Param('id') estimateId: string,
+  ) {
+    return this.estimateService.rejectEstimate(userId, estimateId);
+  }
+
+  @Get('company-estimates')
+  @UseGuards(RolesGuard)
+  @Roles('COMPANY')
+  @ApiOperation({ summary: '업체가 제출한 견적 목록' })
+  @ApiResponse({ status: 200, description: '제출 견적 목록 조회 성공' })
+  async getCompanyEstimates(
+    @CurrentUser('id') userId: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.estimateService.getCompanyEstimates(
+      userId,
+      page || 1,
+      limit || 10,
+    );
+  }
 }
