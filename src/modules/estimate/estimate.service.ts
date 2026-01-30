@@ -5,11 +5,17 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PointService } from '../point/point.service';
 import { ChatService } from '../chat/chat.service';
 import { CreateEstimateRequestDto } from './dto/create-estimate-request.dto';
 import { SubmitEstimateDto } from './dto/submit-estimate.dto';
+import {
+  NOTIFICATION_EVENTS,
+  NotificationEvent,
+  BulkNotificationEvent,
+} from '../notification/notification.events';
 
 const ESTIMATE_POINT_COST = 100; // 견적 제출 시 차감 포인트
 
@@ -21,6 +27,7 @@ export class EstimateService {
     private readonly prisma: PrismaService,
     private readonly pointService: PointService,
     private readonly chatService: ChatService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /** 견적요청 생성 (USER) */
@@ -43,6 +50,29 @@ export class EstimateService {
     });
 
     this.logger.log(`견적요청 생성: id=${request.id}, userId=${userId}`);
+
+    // 전문분야 매칭 업체들에게 알림
+    const matchingCompanies = await this.prisma.company.findMany({
+      where: {
+        isActive: true,
+        verificationStatus: 'APPROVED',
+      },
+      select: { userId: true },
+    });
+
+    if (matchingCompanies.length > 0) {
+      this.eventEmitter.emit(
+        NOTIFICATION_EVENTS.NEW_ESTIMATE_REQUEST,
+        new BulkNotificationEvent(
+          matchingCompanies.map((c) => c.userId),
+          'NEW_ESTIMATE_REQUEST',
+          '새 견적요청이 도착했습니다',
+          `${dto.address} 지역 견적요청이 등록되었습니다.`,
+          { estimateRequestId: request.id, cleaningType: dto.cleaningType },
+        ),
+      );
+    }
+
     return request;
   }
 
@@ -188,6 +218,18 @@ export class EstimateService {
       `견적 제출: id=${estimate.id}, companyId=${company.id}, requestId=${estimateRequestId}`,
     );
 
+    // 견적요청 작성자에게 알림
+    this.eventEmitter.emit(
+      NOTIFICATION_EVENTS.ESTIMATE_SUBMITTED,
+      new NotificationEvent(
+        estimate.estimateRequest.userId,
+        'ESTIMATE_SUBMITTED',
+        '새 견적이 도착했습니다',
+        `${company.businessName}에서 견적을 보냈습니다.`,
+        { estimateRequestId, estimateId: estimate.id },
+      ),
+    );
+
     return estimate;
   }
 
@@ -322,6 +364,18 @@ export class EstimateService {
       `견적 수락: estimateId=${estimateId}, matchingId=${result.matching.id}, chatRoomId=${result.chatRoom.id}`,
     );
 
+    // 업체에게 견적 수락 알림
+    this.eventEmitter.emit(
+      NOTIFICATION_EVENTS.ESTIMATE_ACCEPTED,
+      new NotificationEvent(
+        estimate.company.userId,
+        'ESTIMATE_ACCEPTED',
+        '견적이 수락되었습니다',
+        `고객이 견적을 수락했습니다. 채팅방에서 상담을 진행해주세요.`,
+        { estimateId, chatRoomId: result.chatRoom.id },
+      ),
+    );
+
     return result;
   }
 
@@ -329,7 +383,10 @@ export class EstimateService {
   async rejectEstimate(userId: string, estimateId: string) {
     const estimate = await this.prisma.estimate.findUnique({
       where: { id: estimateId },
-      include: { estimateRequest: true },
+      include: {
+        estimateRequest: true,
+        company: { select: { id: true, userId: true, businessName: true } },
+      },
     });
 
     if (!estimate) {
@@ -352,6 +409,18 @@ export class EstimateService {
     });
 
     this.logger.log(`견적 거부: estimateId=${estimateId}, userId=${userId}`);
+
+    // 업체에게 견적 거절 알림
+    this.eventEmitter.emit(
+      NOTIFICATION_EVENTS.ESTIMATE_REJECTED,
+      new NotificationEvent(
+        estimate.company.userId,
+        'ESTIMATE_REJECTED',
+        '견적이 거절되었습니다',
+        `고객이 견적을 거절했습니다.`,
+        { estimateId, estimateRequestId: estimate.estimateRequestId },
+      ),
+    );
 
     return updated;
   }

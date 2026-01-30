@@ -5,14 +5,22 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateReviewDto } from './dto/create-review.dto';
+import {
+  NOTIFICATION_EVENTS,
+  NotificationEvent,
+} from '../notification/notification.events';
 
 @Injectable()
 export class ReviewService {
   private readonly logger = new Logger(ReviewService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   /** 리뷰 작성 */
   async create(userId: string, dto: CreateReviewDto) {
@@ -83,6 +91,24 @@ export class ReviewService {
     this.logger.log(
       `리뷰 작성: id=${review.id}, matchingId=${dto.matchingId}, rating=${dto.rating}`,
     );
+
+    // 업체에게 새 리뷰 알림
+    const companyWithUser = await this.prisma.company.findUnique({
+      where: { id: matching.companyId! },
+      select: { userId: true, id: true },
+    });
+    if (companyWithUser) {
+      this.eventEmitter.emit(
+        NOTIFICATION_EVENTS.NEW_REVIEW,
+        new NotificationEvent(
+          companyWithUser.userId,
+          'NEW_REVIEW',
+          '새로운 리뷰가 등록되었습니다',
+          `${dto.rating}점 리뷰가 등록되었습니다.`,
+          { reviewId: review.id, companyId: companyWithUser.id, rating: dto.rating },
+        ),
+      );
+    }
 
     return review;
   }

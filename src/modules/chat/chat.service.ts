@@ -5,13 +5,21 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  NOTIFICATION_EVENTS,
+  NotificationEvent,
+} from '../notification/notification.events';
 
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   /** 채팅방 생성 (채팅상담 직접 클릭 시) */
   async createRoom(userId: string, companyId: string) {
@@ -116,6 +124,33 @@ export class ChatService {
         },
       }),
     ]);
+
+    // 첫 번째 비시스템 메시지인 경우 상대방에게 알림
+    if (messageType !== 'SYSTEM') {
+      const previousMessages = await this.prisma.chatMessage.count({
+        where: {
+          roomId,
+          senderId,
+          messageType: { not: 'SYSTEM' },
+        },
+      });
+
+      if (previousMessages === 1) {
+        const recipientId =
+          senderId === room.userId ? room.company.userId : room.userId;
+
+        this.eventEmitter.emit(
+          NOTIFICATION_EVENTS.NEW_MESSAGE_FIRST_REPLY,
+          new NotificationEvent(
+            recipientId,
+            'NEW_MESSAGE',
+            '새 메시지가 도착했습니다',
+            content.length > 50 ? content.substring(0, 50) + '...' : content,
+            { roomId },
+          ),
+        );
+      }
+    }
 
     return message;
   }

@@ -4,13 +4,21 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  NOTIFICATION_EVENTS,
+  NotificationEvent,
+} from '../notification/notification.events';
 
 @Injectable()
 export class PointService {
   private readonly logger = new Logger(PointService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   /** 포인트 지갑 조회 (없으면 생성) */
   async getOrCreateWallet(companyId: string) {
@@ -91,6 +99,24 @@ export class PointService {
       `포인트 충전: companyId=${companyId}, amount=${amount}, newBalance=${updatedWallet.balance}`,
     );
 
+    // 포인트 변동 알림
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { userId: true },
+    });
+    if (company) {
+      this.eventEmitter.emit(
+        NOTIFICATION_EVENTS.POINT_CHANGE,
+        new NotificationEvent(
+          company.userId,
+          'POINT_CHANGE',
+          '포인트가 충전되었습니다',
+          `${amount.toLocaleString()}P가 충전되었습니다. 잔액: ${updatedWallet.balance.toLocaleString()}P`,
+          { type: 'CHARGE', amount, balance: updatedWallet.balance },
+        ),
+      );
+    }
+
     return { balance: updatedWallet.balance, transaction };
   }
 
@@ -133,6 +159,24 @@ export class PointService {
       `포인트 사용: companyId=${companyId}, amount=${amount}, newBalance=${updatedWallet.balance}`,
     );
 
+    // 포인트 변동 알림
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { userId: true },
+    });
+    if (company) {
+      this.eventEmitter.emit(
+        NOTIFICATION_EVENTS.POINT_CHANGE,
+        new NotificationEvent(
+          company.userId,
+          'POINT_CHANGE',
+          '포인트가 사용되었습니다',
+          `${amount.toLocaleString()}P가 사용되었습니다. 잔액: ${updatedWallet.balance.toLocaleString()}P`,
+          { type: 'USE', amount, balance: updatedWallet.balance },
+        ),
+      );
+    }
+
     return { balance: updatedWallet.balance, transaction };
   }
 
@@ -168,6 +212,24 @@ export class PointService {
     this.logger.log(
       `포인트 환불: companyId=${companyId}, amount=${amount}, newBalance=${updatedWallet.balance}`,
     );
+
+    // 포인트 변동 알림
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { userId: true },
+    });
+    if (company) {
+      this.eventEmitter.emit(
+        NOTIFICATION_EVENTS.POINT_CHANGE,
+        new NotificationEvent(
+          company.userId,
+          'POINT_CHANGE',
+          '포인트가 환불되었습니다',
+          `${amount.toLocaleString()}P가 환불되었습니다. 잔액: ${updatedWallet.balance.toLocaleString()}P`,
+          { type: 'REFUND', amount, balance: updatedWallet.balance },
+        ),
+      );
+    }
 
     return { balance: updatedWallet.balance, transaction };
   }

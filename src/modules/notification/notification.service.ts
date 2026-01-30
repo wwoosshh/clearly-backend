@@ -1,39 +1,172 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationGateway } from './notification.gateway';
+import {
+  NOTIFICATION_EVENTS,
+  NotificationEvent,
+  BulkNotificationEvent,
+} from './notification.events';
+import { NotificationType } from '@prisma/client';
 
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gateway: NotificationGateway,
+  ) {}
 
-  // TODO: 알림 생성
-  async create(userId: string, type: string, data: any) {
-    // TODO: 구현 예정
-    return null;
+  async create(
+    userId: string,
+    type: NotificationType,
+    title: string,
+    content: string,
+    data?: Record<string, any>,
+  ) {
+    const notification = await this.prisma.notification.create({
+      data: { userId, type, title, content, data: data ?? undefined },
+    });
+
+    this.gateway.sendToUser(userId, 'newNotification', notification);
+    this.logger.log(`알림 생성: userId=${userId}, type=${type}`);
+
+    return notification;
   }
 
-  // TODO: 사용자 알림 목록 조회
-  async findByUser(userId: string, page: number, limit: number) {
-    // TODO: 구현 예정
-    return [];
+  async createBulk(
+    userIds: string[],
+    type: NotificationType,
+    title: string,
+    content: string,
+    data?: Record<string, any>,
+  ) {
+    const notifications = await Promise.all(
+      userIds.map((userId) => this.create(userId, type, title, content, data)),
+    );
+    return notifications;
   }
 
-  // TODO: 알림 읽음 처리
+  async findByUser(userId: string, page = 1, limit = 20) {
+    const [notifications, total, unreadCount] = await Promise.all([
+      this.prisma.notification.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.notification.count({ where: { userId } }),
+      this.prisma.notification.count({ where: { userId, isRead: false } }),
+    ]);
+
+    return {
+      data: notifications,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      unreadCount,
+    };
+  }
+
+  async getUnreadCount(userId: string): Promise<number> {
+    return this.prisma.notification.count({
+      where: { userId, isRead: false },
+    });
+  }
+
   async markAsRead(id: string, userId: string) {
-    // TODO: 구현 예정
-    return null;
+    const notification = await this.prisma.notification.updateMany({
+      where: { id, userId },
+      data: { isRead: true },
+    });
+    return { success: notification.count > 0 };
   }
 
-  // TODO: 전체 알림 읽음 처리
   async markAllAsRead(userId: string) {
-    // TODO: 구현 예정
-    return null;
+    const result = await this.prisma.notification.updateMany({
+      where: { userId, isRead: false },
+      data: { isRead: true },
+    });
+    return { count: result.count };
   }
 
-  // TODO: 푸시 알림 전송
-  async sendPushNotification(userId: string, title: string, body: string) {
-    // TODO: 구현 예정
-    return null;
+  // ========================================
+  // 이벤트 리스너
+  // ========================================
+
+  @OnEvent(NOTIFICATION_EVENTS.ESTIMATE_SUBMITTED)
+  async handleEstimateSubmitted(event: NotificationEvent) {
+    await this.create(
+      event.userId,
+      'ESTIMATE_SUBMITTED',
+      event.title,
+      event.content,
+      event.data,
+    );
+  }
+
+  @OnEvent(NOTIFICATION_EVENTS.ESTIMATE_ACCEPTED)
+  async handleEstimateAccepted(event: NotificationEvent) {
+    await this.create(
+      event.userId,
+      'ESTIMATE_ACCEPTED',
+      event.title,
+      event.content,
+      event.data,
+    );
+  }
+
+  @OnEvent(NOTIFICATION_EVENTS.ESTIMATE_REJECTED)
+  async handleEstimateRejected(event: NotificationEvent) {
+    await this.create(
+      event.userId,
+      'ESTIMATE_REJECTED',
+      event.title,
+      event.content,
+      event.data,
+    );
+  }
+
+  @OnEvent(NOTIFICATION_EVENTS.NEW_ESTIMATE_REQUEST)
+  async handleNewEstimateRequest(event: BulkNotificationEvent) {
+    await this.createBulk(
+      event.userIds,
+      'NEW_ESTIMATE_REQUEST',
+      event.title,
+      event.content,
+      event.data,
+    );
+  }
+
+  @OnEvent(NOTIFICATION_EVENTS.NEW_MESSAGE_FIRST_REPLY)
+  async handleNewMessageFirstReply(event: NotificationEvent) {
+    await this.create(
+      event.userId,
+      'NEW_MESSAGE',
+      event.title,
+      event.content,
+      event.data,
+    );
+  }
+
+  @OnEvent(NOTIFICATION_EVENTS.NEW_REVIEW)
+  async handleNewReview(event: NotificationEvent) {
+    await this.create(
+      event.userId,
+      'NEW_REVIEW',
+      event.title,
+      event.content,
+      event.data,
+    );
+  }
+
+  @OnEvent(NOTIFICATION_EVENTS.POINT_CHANGE)
+  async handlePointChange(event: NotificationEvent) {
+    await this.create(
+      event.userId,
+      'POINT_CHANGE',
+      event.title,
+      event.content,
+      event.data,
+    );
   }
 }
