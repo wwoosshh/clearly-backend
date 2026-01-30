@@ -59,6 +59,22 @@ export class ChatController {
     );
   }
 
+  @Post('rooms/:id/messages')
+  @ApiOperation({ summary: '메시지 전송 (REST)' })
+  @ApiResponse({ status: 201, description: '메시지 전송 성공' })
+  async sendMessage(
+    @Param('id') roomId: string,
+    @CurrentUser('id') userId: string,
+    @Body() body: { content: string; messageType?: string },
+  ) {
+    return this.chatService.sendMessage(
+      roomId,
+      userId,
+      body.content,
+      (body.messageType as any) || 'TEXT',
+    );
+  }
+
   @Patch('rooms/:id/read')
   @ApiOperation({ summary: '읽음 처리' })
   @ApiResponse({ status: 200, description: '읽음 처리 성공' })
