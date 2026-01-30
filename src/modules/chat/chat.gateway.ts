@@ -12,11 +12,12 @@ import {
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { ChatService } from './chat.service';
 
 @WebSocketGateway({
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: '*',
     credentials: true,
   },
   namespace: '/chat',
@@ -33,6 +34,7 @@ export class ChatGateway
   constructor(
     private readonly chatService: ChatService,
     private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
   ) {}
 
   afterInit() {
@@ -52,7 +54,7 @@ export class ChatGateway
       }
 
       const payload = this.jwtService.verify(token, {
-        secret: process.env.JWT_ACCESS_SECRET,
+        secret: this.configService.get('JWT_ACCESS_SECRET'),
       });
 
       (client as any).userId = payload.sub;

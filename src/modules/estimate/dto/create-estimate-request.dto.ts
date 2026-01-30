@@ -41,7 +41,7 @@ export class CreateEstimateRequestDto {
   @ApiPropertyOptional({ description: '희망 시간대' })
   @IsOptional()
   @IsString()
-  @MaxLength(10)
+  @MaxLength(50)
   desiredTime?: string;
 
   @ApiProperty({ description: '상세 설명' })

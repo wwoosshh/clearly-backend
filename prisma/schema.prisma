@@ -228,7 +228,7 @@ model Matching {
   detailAddress  String?        @map("detail_address") @db.VarChar(200)
   areaSize       Int?           @map("area_size")
   desiredDate    DateTime?      @map("desired_date") @db.Date
-  desiredTime    String?        @map("desired_time") @db.VarChar(10)
+  desiredTime    String?        @map("desired_time") @db.VarChar(50)
   message        String?        @db.Text
   estimatedPrice Int?           @map("estimated_price")
   rejectionReason String?       @map("rejection_reason") @db.Text
@@ -411,7 +411,7 @@ model EstimateRequest {
   detailAddress String?               @map("detail_address") @db.VarChar(200)
   areaSize      Int?                  @map("area_size")
   desiredDate   DateTime?             @map("desired_date") @db.Date
-  desiredTime   String?               @map("desired_time") @db.VarChar(10)
+  desiredTime   String?               @map("desired_time") @db.VarChar(50)
   message       String                @db.Text
   budget        Int?
   status        EstimateRequestStatus @default(OPEN)
