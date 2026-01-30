@@ -16,6 +16,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { PointModule } from './modules/point/point.module';
 import { EstimateModule } from './modules/estimate/estimate.module';
+import { ReportModule } from './modules/report/report.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { EstimateModule } from './modules/estimate/estimate.module';
     UploadModule,
     PointModule,
     EstimateModule,
+    ReportModule,
   ],
   controllers: [AppController],
   providers: [AppService],
