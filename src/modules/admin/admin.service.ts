@@ -1,5 +1,9 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  ResolveReportDto,
+  ReportActionType,
+} from './dto/resolve-report.dto';
 
 @Injectable()
 export class AdminService {
@@ -7,24 +11,47 @@ export class AdminService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  // ─── 대시보드 ───────────────────────────────────────────
+
   async getDashboardStats() {
-    const [totalUsers, totalCompanies, pendingCompanies, totalMatchings] =
-      await Promise.all([
-        this.prisma.user.count(),
-        this.prisma.company.count(),
-        this.prisma.company.count({
-          where: { verificationStatus: 'PENDING' },
-        }),
-        this.prisma.matching.count(),
-      ]);
+    const [
+      totalUsers,
+      totalCompanies,
+      pendingCompanies,
+      totalMatchings,
+      pendingReports,
+      completedMatchings,
+      totalReviews,
+      openEstimateRequests,
+      activeChatRooms,
+    ] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.company.count(),
+      this.prisma.company.count({
+        where: { verificationStatus: 'PENDING' },
+      }),
+      this.prisma.matching.count(),
+      this.prisma.report.count({ where: { status: 'PENDING' } }),
+      this.prisma.matching.count({ where: { status: 'COMPLETED' } }),
+      this.prisma.review.count(),
+      this.prisma.estimateRequest.count({ where: { status: 'OPEN' } }),
+      this.prisma.chatRoom.count({ where: { isActive: true } }),
+    ]);
 
     return {
       totalUsers,
       totalCompanies,
       pendingCompanies,
       totalMatchings,
+      pendingReports,
+      completedMatchings,
+      totalReviews,
+      openEstimateRequests,
+      activeChatRooms,
     };
   }
+
+  // ─── 사용자 관리 ────────────────────────────────────────
 
   async getUsers(page: number, limit: number, filters: any) {
     const skip = (page - 1) * limit;
@@ -35,6 +62,12 @@ export class AdminService {
     }
     if (filters?.isActive !== undefined) {
       where.isActive = filters.isActive === 'true';
+    }
+    if (filters?.search) {
+      where.OR = [
+        { name: { contains: filters.search } },
+        { email: { contains: filters.search } },
+      ];
     }
 
     const [users, total] = await Promise.all([
@@ -66,6 +99,99 @@ export class AdminService {
       },
     };
   }
+
+  async getUserDetail(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        company: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    const [recentMatchings, recentReviews, recentReports, estimateRequests] =
+      await Promise.all([
+        this.prisma.matching.findMany({
+          where: { userId },
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            company: {
+              select: { id: true, businessName: true },
+            },
+          },
+        }),
+        this.prisma.review.findMany({
+          where: { userId },
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            company: {
+              select: { id: true, businessName: true },
+            },
+          },
+        }),
+        this.prisma.report.findMany({
+          where: {
+            OR: [{ reporterId: userId }, { targetType: 'USER', targetId: userId }],
+          },
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            reporter: {
+              select: { id: true, name: true, email: true },
+            },
+          },
+        }),
+        this.prisma.estimateRequest.findMany({
+          where: { userId },
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+        }),
+      ]);
+
+    return {
+      ...user,
+      recentMatchings,
+      recentReviews,
+      recentReports,
+      estimateRequests,
+    };
+  }
+
+  async toggleUserActive(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { company: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    const newIsActive = !user.isActive;
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
+        where: { id: userId },
+        data: { isActive: newIsActive },
+      });
+
+      if (user.role === 'COMPANY' && user.company) {
+        await tx.company.update({
+          where: { id: user.company.id },
+          data: { isActive: newIsActive },
+        });
+      }
+
+      return updatedUser;
+    });
+  }
+
+  // ─── 업체 관리 ──────────────────────────────────────────
 
   async getCompanies(page: number, limit: number, status?: string) {
     const skip = (page - 1) * limit;
@@ -104,6 +230,87 @@ export class AdminService {
         limit,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  async getCompanyDetail(companyId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            phone: true,
+            role: true,
+            isActive: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    if (!company) {
+      throw new NotFoundException('업체를 찾을 수 없습니다.');
+    }
+
+    const [matchings, reviews, estimates, pointWallet, subscriptions] =
+      await Promise.all([
+        this.prisma.matching.findMany({
+          where: { companyId },
+          take: 20,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+          },
+        }),
+        this.prisma.review.findMany({
+          where: { companyId },
+          take: 20,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: { select: { id: true, name: true } },
+          },
+        }),
+        this.prisma.estimate.findMany({
+          where: { companyId },
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            estimateRequest: {
+              select: {
+                id: true,
+                cleaningType: true,
+                address: true,
+                status: true,
+              },
+            },
+          },
+        }),
+        this.prisma.pointWallet.findUnique({
+          where: { companyId },
+          include: {
+            transactions: {
+              take: 20,
+              orderBy: { createdAt: 'desc' },
+            },
+          },
+        }),
+        this.prisma.companySubscription.findMany({
+          where: { companyId },
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+        }),
+      ]);
+
+    return {
+      ...company,
+      matchings,
+      reviews,
+      estimates,
+      pointWallet,
+      subscriptions,
     };
   }
 
@@ -152,11 +359,203 @@ export class AdminService {
     });
   }
 
-  async getReports(page: number, limit: number) {
+  async suspendCompany(companyId: string, reason: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+    });
+
+    if (!company) {
+      throw new NotFoundException('업체를 찾을 수 없습니다.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedCompany = await tx.company.update({
+        where: { id: companyId },
+        data: {
+          verificationStatus: 'SUSPENDED',
+          rejectionReason: reason,
+          isActive: false,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: company.userId },
+        data: { isActive: false },
+      });
+
+      return updatedCompany;
+    });
+  }
+
+  async reactivateCompany(companyId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+    });
+
+    if (!company) {
+      throw new NotFoundException('업체를 찾을 수 없습니다.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedCompany = await tx.company.update({
+        where: { id: companyId },
+        data: {
+          verificationStatus: 'APPROVED',
+          rejectionReason: null,
+          isActive: true,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: company.userId },
+        data: { isActive: true },
+      });
+
+      return updatedCompany;
+    });
+  }
+
+  // ─── 채팅 모니터링 ─────────────────────────────────────
+
+  async getChatRooms(page: number, limit: number, filters: any) {
     const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (filters?.isActive !== undefined) {
+      where.isActive = filters.isActive === 'true';
+    }
+    if (filters?.refundStatus) {
+      where.refundStatus = filters.refundStatus;
+    }
+    if (filters?.search) {
+      where.OR = [
+        { user: { name: { contains: filters.search } } },
+        { company: { businessName: { contains: filters.search } } },
+      ];
+    }
+
+    const [chatRooms, total] = await Promise.all([
+      this.prisma.chatRoom.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          company: {
+            select: { id: true, businessName: true },
+          },
+          messages: {
+            take: 1,
+            orderBy: { createdAt: 'desc' },
+            select: { content: true, createdAt: true },
+          },
+          _count: { select: { messages: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.chatRoom.count({ where }),
+    ]);
+
+    return {
+      data: chatRooms,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getChatRoomDetail(roomId: string) {
+    const chatRoom = await this.prisma.chatRoom.findUnique({
+      where: { id: roomId },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true, phone: true },
+        },
+        company: {
+          select: { id: true, businessName: true, businessNumber: true },
+        },
+        matching: {
+          select: {
+            id: true,
+            status: true,
+            cleaningType: true,
+            estimatedPrice: true,
+          },
+        },
+        estimate: {
+          select: {
+            id: true,
+            price: true,
+            status: true,
+          },
+        },
+        _count: { select: { messages: true } },
+      },
+    });
+
+    if (!chatRoom) {
+      throw new NotFoundException('채팅방을 찾을 수 없습니다.');
+    }
+
+    return chatRoom;
+  }
+
+  async getChatRoomMessages(roomId: string, page: number, limit: number) {
+    const chatRoom = await this.prisma.chatRoom.findUnique({
+      where: { id: roomId },
+    });
+
+    if (!chatRoom) {
+      throw new NotFoundException('채팅방을 찾을 수 없습니다.');
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [messages, total] = await Promise.all([
+      this.prisma.chatMessage.findMany({
+        where: { roomId },
+        skip,
+        take: limit,
+        include: {
+          sender: {
+            select: { id: true, name: true, role: true, profileImage: true },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.chatMessage.count({ where: { roomId } }),
+    ]);
+
+    return {
+      data: messages,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // ─── 신고 관리 ──────────────────────────────────────────
+
+  async getReports(page: number, limit: number, filters?: any) {
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (filters?.status) {
+      where.status = filters.status;
+    }
+    if (filters?.targetType) {
+      where.targetType = filters.targetType;
+    }
 
     const [reports, total] = await Promise.all([
       this.prisma.report.findMany({
+        where,
         skip,
         take: limit,
         include: {
@@ -170,11 +569,35 @@ export class AdminService {
         },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.report.count(),
+      this.prisma.report.count({ where }),
     ]);
 
+    // Resolve target entities
+    const reportsWithTargets = await Promise.all(
+      reports.map(async (report) => {
+        let target: any = null;
+        if (report.targetType === 'USER') {
+          target = await this.prisma.user.findUnique({
+            where: { id: report.targetId },
+            select: { id: true, name: true, email: true },
+          });
+        } else if (report.targetType === 'COMPANY') {
+          target = await this.prisma.company.findUnique({
+            where: { id: report.targetId },
+            select: { id: true, businessName: true },
+          });
+        } else if (report.targetType === 'REVIEW') {
+          target = await this.prisma.review.findUnique({
+            where: { id: report.targetId },
+            select: { id: true, content: true, rating: true },
+          });
+        }
+        return { ...report, target };
+      }),
+    );
+
     return {
-      data: reports,
+      data: reportsWithTargets,
       meta: {
         total,
         page,
@@ -184,15 +607,290 @@ export class AdminService {
     };
   }
 
+  async getReportDetail(reportId: string) {
+    const report = await this.prisma.report.findUnique({
+      where: { id: reportId },
+      include: {
+        reporter: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            phone: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    if (!report) {
+      throw new NotFoundException('신고를 찾을 수 없습니다.');
+    }
+
+    // Resolve target entity
+    let target: any = null;
+    if (report.targetType === 'USER') {
+      target = await this.prisma.user.findUnique({
+        where: { id: report.targetId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          role: true,
+          isActive: true,
+        },
+      });
+    } else if (report.targetType === 'COMPANY') {
+      target = await this.prisma.company.findUnique({
+        where: { id: report.targetId },
+        select: {
+          id: true,
+          businessName: true,
+          businessNumber: true,
+          verificationStatus: true,
+          isActive: true,
+        },
+      });
+    } else if (report.targetType === 'REVIEW') {
+      target = await this.prisma.review.findUnique({
+        where: { id: report.targetId },
+        select: {
+          id: true,
+          content: true,
+          rating: true,
+          isVisible: true,
+          user: { select: { id: true, name: true } },
+          company: { select: { id: true, businessName: true } },
+        },
+      });
+    }
+
+    // Get other reports for the same target
+    const relatedReports = await this.prisma.report.findMany({
+      where: {
+        targetType: report.targetType,
+        targetId: report.targetId,
+        id: { not: reportId },
+      },
+      take: 10,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        reporter: { select: { id: true, name: true } },
+      },
+    });
+
+    return {
+      ...report,
+      target,
+      relatedReports,
+    };
+  }
+
+  async resolveReport(reportId: string, dto: ResolveReportDto) {
+    const report = await this.prisma.report.findUnique({
+      where: { id: reportId },
+    });
+
+    if (!report) {
+      throw new NotFoundException('신고를 찾을 수 없습니다.');
+    }
+
+    const updatedReport = await this.prisma.report.update({
+      where: { id: reportId },
+      data: {
+        status: dto.status,
+        adminNote: dto.adminNote,
+        resolvedAt: new Date(),
+      },
+    });
+
+    // Execute action if specified
+    if (dto.actionType) {
+      switch (dto.actionType) {
+        case ReportActionType.SUSPEND_USER:
+          if (report.targetType === 'USER') {
+            await this.prisma.user.update({
+              where: { id: report.targetId },
+              data: { isActive: false },
+            });
+          }
+          break;
+        case ReportActionType.SUSPEND_COMPANY:
+          if (report.targetType === 'COMPANY') {
+            const company = await this.prisma.company.findUnique({
+              where: { id: report.targetId },
+            });
+            if (company) {
+              await this.prisma.$transaction(async (tx) => {
+                await tx.company.update({
+                  where: { id: report.targetId },
+                  data: {
+                    verificationStatus: 'SUSPENDED',
+                    rejectionReason: dto.adminNote,
+                    isActive: false,
+                  },
+                });
+                await tx.user.update({
+                  where: { id: company.userId },
+                  data: { isActive: false },
+                });
+              });
+            }
+          }
+          break;
+        case ReportActionType.HIDE_REVIEW:
+          if (report.targetType === 'REVIEW') {
+            await this.prisma.review.update({
+              where: { id: report.targetId },
+              data: { isVisible: false },
+            });
+          }
+          break;
+      }
+    }
+
+    return updatedReport;
+  }
+
+  // ─── 리뷰 관리 ──────────────────────────────────────────
+
+  async getReviews(page: number, limit: number, filters?: any) {
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (filters?.isVisible !== undefined) {
+      where.isVisible = filters.isVisible === 'true';
+    }
+    if (filters?.minRating) {
+      where.rating = { ...where.rating, gte: parseInt(filters.minRating) };
+    }
+    if (filters?.maxRating) {
+      where.rating = { ...where.rating, lte: parseInt(filters.maxRating) };
+    }
+
+    const [reviews, total] = await Promise.all([
+      this.prisma.review.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          company: { select: { id: true, businessName: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.review.count({ where }),
+    ]);
+
+    return {
+      data: reviews,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async toggleReviewVisibility(reviewId: string) {
+    const review = await this.prisma.review.findUnique({
+      where: { id: reviewId },
+    });
+
+    if (!review) {
+      throw new NotFoundException('리뷰를 찾을 수 없습니다.');
+    }
+
+    return this.prisma.review.update({
+      where: { id: reviewId },
+      data: { isVisible: !review.isVisible },
+    });
+  }
+
+  // ─── 견적요청 모니터링 ──────────────────────────────────
+
+  async getEstimateRequests(page: number, limit: number, filters?: any) {
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (filters?.status) {
+      where.status = filters.status;
+    }
+    if (filters?.cleaningType) {
+      where.cleaningType = filters.cleaningType;
+    }
+
+    const [estimateRequests, total] = await Promise.all([
+      this.prisma.estimateRequest.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          _count: { select: { estimates: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.estimateRequest.count({ where }),
+    ]);
+
+    return {
+      data: estimateRequests,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // ─── 매칭 모니터링 ─────────────────────────────────────
+
+  async getMatchings(page: number, limit: number, filters?: any) {
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (filters?.status) {
+      where.status = filters.status;
+    }
+
+    const [matchings, total] = await Promise.all([
+      this.prisma.matching.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          company: { select: { id: true, businessName: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.matching.count({ where }),
+    ]);
+
+    return {
+      data: matchings,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // ─── 설정 ──────────────────────────────────────────────
+
   async getSettings() {
-    // TODO: 시스템 설정 테이블 추가 후 구현
     return {
       message: '시스템 설정 기능은 추후 구현 예정입니다.',
     };
   }
 
   async updateSettings(data: any) {
-    // TODO: 시스템 설정 테이블 추가 후 구현
     return {
       message: '시스템 설정 기능은 추후 구현 예정입니다.',
     };
