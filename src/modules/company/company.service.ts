@@ -245,9 +245,17 @@ export class CompanyService {
         );
         const profileScore = this.calcProfileCompleteness(company);
 
+        // 업체 고유 품질 점수 (거리 무관, DB 저장용)
+        const baseScore =
+          ratingScore * 0.35 +
+          profileScore * 0.25 +
+          responseScore * 0.15 +
+          matchingScore * 0.15 +
+          subscriptionScore * 0.1;
+
         let totalScore: number;
         if (hasSearchLocation && distance != null) {
-          // 위치 정보 있을 때: 거리 포함
+          // 위치 정보 있을 때: 거리 포함 (검색 결과 정렬용)
           const distanceScore = this.calcDistanceScore(distance, maxDistance);
           totalScore =
             distanceScore * 0.3 +
@@ -257,13 +265,7 @@ export class CompanyService {
             matchingScore * 0.1 +
             subscriptionScore * 0.1;
         } else {
-          // 위치 정보 없을 때: 거리 제외, 다른 요소로 보상
-          totalScore =
-            ratingScore * 0.35 +
-            profileScore * 0.25 +
-            responseScore * 0.15 +
-            matchingScore * 0.15 +
-            subscriptionScore * 0.1;
+          totalScore = baseScore;
         }
 
         return {
@@ -286,6 +288,7 @@ export class CompanyService {
           distance:
             distance != null ? Math.round(distance * 10) / 10 : null,
           score: Math.round(totalScore * 10) / 10,
+          baseScore: Math.round(baseScore * 10) / 10,
           user: company.user,
         };
       })
@@ -294,12 +297,12 @@ export class CompanyService {
     // 정렬
     this.sortCompanies(companiesWithScore, sortBy);
 
-    // 점수를 DB에 저장 (비동기, 검색 결과 반환에 영향 없음)
+    // 업체 고유 품질 점수를 DB에 저장 (거리 제외, 비동기)
     const scoreUpdates = companiesWithScore.map((c) =>
       this.prisma.company.update({
         where: { id: c.id },
         data: {
-          searchScore: c.score,
+          searchScore: c.baseScore,
           searchScoreAt: new Date(),
         },
       }),
