@@ -18,6 +18,8 @@ import { UploadModule } from './modules/upload/upload.module';
 import { PointModule } from './modules/point/point.module';
 import { EstimateModule } from './modules/estimate/estimate.module';
 import { ReportModule } from './modules/report/report.module';
+import { FaqModule } from './modules/faq/faq.module';
+import { InquiryModule } from './modules/inquiry/inquiry.module';
 
 @Module({
   imports: [
@@ -41,6 +43,8 @@ import { ReportModule } from './modules/report/report.module';
     PointModule,
     EstimateModule,
     ReportModule,
+    FaqModule,
+    InquiryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -134,6 +134,12 @@ enum RefundStatus {
   REJECTED
 }
 
+enum InquiryStatus {
+  PENDING
+  ANSWERED
+  CLOSED
+}
+
 // ==================
 // Models
 // ==================
@@ -161,6 +167,7 @@ model User {
   reportsFiled        Report[]      @relation("ReporterReports")
   refreshTokens       RefreshToken[]
   estimateRequests    EstimateRequest[]
+  inquiries           Inquiry[]
 
   @@unique([oauthProvider, oauthId])
   @@index([email])
@@ -479,4 +486,44 @@ model PointTransaction {
 
   @@index([walletId, createdAt(sort: Desc)])
   @@map("point_transactions")
+}
+
+// ==================
+// FAQ / 문의 시스템
+// ==================
+
+model Faq {
+  id        String   @id @default(uuid())
+  category  String   @db.VarChar(50)
+  question  String   @db.VarChar(500)
+  answer    String   @db.Text
+  sortOrder Int      @default(0) @map("sort_order")
+  isVisible Boolean  @default(true) @map("is_visible")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([category, sortOrder])
+  @@index([isVisible])
+  @@map("faqs")
+}
+
+model Inquiry {
+  id          String        @id @default(uuid())
+  userId      String?       @map("user_id")
+  name        String        @db.VarChar(50)
+  email       String        @db.VarChar(255)
+  category    String        @db.VarChar(50)
+  title       String        @db.VarChar(200)
+  content     String        @db.Text
+  status      InquiryStatus @default(PENDING)
+  adminAnswer String?       @map("admin_answer") @db.Text
+  answeredAt  DateTime?     @map("answered_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([userId])
+  @@map("inquiries")
 }
