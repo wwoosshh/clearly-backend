@@ -37,6 +37,19 @@ export class ReviewController {
     return this.reviewService.create(userId, dto);
   }
 
+  @Get('my')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '내 리뷰 목록 조회' })
+  @ApiResponse({ status: 200, description: '내 리뷰 목록 조회 성공' })
+  async findByUser(
+    @CurrentUser('id') userId: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.reviewService.findByUser(userId, page || 1, limit || 10);
+  }
+
   @Get('company/:companyId')
   @ApiOperation({ summary: '업체 리뷰 목록 조회' })
   @ApiResponse({ status: 200, description: '리뷰 목록 조회 성공' })

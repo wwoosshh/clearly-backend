@@ -171,6 +171,37 @@ export class ReviewService {
     return review;
   }
 
+  /** 내 리뷰 목록 */
+  async findByUser(userId: string, page = 1, limit = 10) {
+    const where = { userId };
+
+    const [reviews, total] = await Promise.all([
+      this.prisma.review.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          company: { select: { id: true, businessName: true } },
+          matching: {
+            select: {
+              id: true,
+              cleaningType: true,
+              address: true,
+              completedAt: true,
+            },
+          },
+        },
+      }),
+      this.prisma.review.count({ where }),
+    ]);
+
+    return {
+      data: reviews,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
   /** 리뷰 수정 */
   async update(id: string, userId: string, data: { rating?: number; content?: string }) {
     const review = await this.prisma.review.findUnique({ where: { id } });
