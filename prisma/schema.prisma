@@ -212,6 +212,8 @@ model Company {
   totalMatchings     Int                @default(0) @map("total_matchings")
   responseTime       Int?               @map("response_time")
   isActive           Boolean            @default(true) @map("is_active")
+  searchScore        Decimal?           @map("search_score") @db.Decimal(5, 2)
+  searchScoreAt      DateTime?          @map("search_score_at")
   approvedAt         DateTime?          @map("approved_at")
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")

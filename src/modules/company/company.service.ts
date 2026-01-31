@@ -294,6 +294,18 @@ export class CompanyService {
     // 정렬
     this.sortCompanies(companiesWithScore, sortBy);
 
+    // 점수를 DB에 저장 (비동기, 검색 결과 반환에 영향 없음)
+    const scoreUpdates = companiesWithScore.map((c) =>
+      this.prisma.company.update({
+        where: { id: c.id },
+        data: {
+          searchScore: c.score,
+          searchScoreAt: new Date(),
+        },
+      }),
+    );
+    Promise.allSettled(scoreUpdates).catch(() => {});
+
     // 페이지네이션
     const total = companiesWithScore.length;
     const totalPages = Math.ceil(total / limit);
