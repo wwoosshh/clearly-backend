@@ -8,6 +8,15 @@ export interface GeocodingResult {
   longitude: number;
 }
 
+export interface AddressSuggestion {
+  address: string;
+  roadAddress: string;
+  jibunAddress: string;
+  placeName?: string;
+  latitude: number;
+  longitude: number;
+}
+
 @Injectable()
 export class GeocodingService {
   private readonly logger = new Logger(GeocodingService.name);
@@ -57,5 +66,84 @@ export class GeocodingService {
       );
       return null;
     }
+  }
+
+  async searchAddressSuggestions(
+    query: string,
+  ): Promise<AddressSuggestion[]> {
+    const apiKey = this.configService.get<string>('KAKAO_REST_API_KEY');
+
+    if (!apiKey) {
+      this.logger.warn('KAKAO_REST_API_KEY가 설정되지 않았습니다.');
+      return [];
+    }
+
+    const headers = { Authorization: `KakaoAK ${apiKey}` };
+    const suggestions: AddressSuggestion[] = [];
+    const seenKeys = new Set<string>();
+
+    try {
+      // 1) 카카오 주소검색 API
+      const addressResponse = await firstValueFrom(
+        this.httpService.get(
+          'https://dapi.kakao.com/v2/local/search/address.json',
+          {
+            params: { query, size: 5 },
+            headers,
+          },
+        ),
+      );
+
+      const addressDocs = addressResponse.data?.documents ?? [];
+      for (const doc of addressDocs) {
+        const key = `${doc.y},${doc.x}`;
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+
+        suggestions.push({
+          address: doc.address_name || '',
+          roadAddress: doc.road_address?.address_name || '',
+          jibunAddress: doc.address?.address_name || doc.address_name || '',
+          latitude: parseFloat(doc.y),
+          longitude: parseFloat(doc.x),
+        });
+      }
+
+      // 2) 결과 3개 미만 시 카카오 키워드검색 API 보조 호출
+      if (suggestions.length < 3) {
+        const keywordResponse = await firstValueFrom(
+          this.httpService.get(
+            'https://dapi.kakao.com/v2/local/search/keyword.json',
+            {
+              params: { query, size: 5 },
+              headers,
+            },
+          ),
+        );
+
+        const keywordDocs = keywordResponse.data?.documents ?? [];
+        for (const doc of keywordDocs) {
+          const key = `${doc.y},${doc.x}`;
+          if (seenKeys.has(key)) continue;
+          seenKeys.add(key);
+
+          suggestions.push({
+            address: doc.address_name || '',
+            roadAddress: doc.road_address_name || '',
+            jibunAddress: doc.address_name || '',
+            placeName: doc.place_name || undefined,
+            latitude: parseFloat(doc.y),
+            longitude: parseFloat(doc.x),
+          });
+        }
+      }
+    } catch (error) {
+      const status = error.response?.status;
+      this.logger.error(
+        `주소 추천 API 호출 실패: status=${status}, message=${error.message}`,
+      );
+    }
+
+    return suggestions.slice(0, 7);
   }
 }

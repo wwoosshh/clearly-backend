@@ -20,6 +20,7 @@ import { EstimateModule } from './modules/estimate/estimate.module';
 import { ReportModule } from './modules/report/report.module';
 import { FaqModule } from './modules/faq/faq.module';
 import { InquiryModule } from './modules/inquiry/inquiry.module';
+import { GeocodingModule } from './modules/geocoding/geocoding.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { InquiryModule } from './modules/inquiry/inquiry.module';
     ReportModule,
     FaqModule,
     InquiryModule,
+    GeocodingModule,
   ],
   controllers: [AppController],
   providers: [AppService],
