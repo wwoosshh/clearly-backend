@@ -40,14 +40,14 @@ export class ReviewController {
   @Get('my')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: '내 리뷰 목록 조회' })
+  @ApiOperation({ summary: '내 리뷰 목록 조회 (유저: 작성한 리뷰, 업체: 받은 리뷰)' })
   @ApiResponse({ status: 200, description: '내 리뷰 목록 조회 성공' })
-  async findByUser(
+  async findMyReviews(
     @CurrentUser('id') userId: string,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
-    return this.reviewService.findByUser(userId, page || 1, limit || 10);
+    return this.reviewService.findMyReviews(userId, page || 1, limit || 10);
   }
 
   @Get('company/:companyId')

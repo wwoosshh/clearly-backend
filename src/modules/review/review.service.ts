@@ -171,7 +171,22 @@ export class ReviewService {
     return review;
   }
 
-  /** 내 리뷰 목록 */
+  /** 내 리뷰 목록 (역할에 따라 작성한 리뷰 또는 받은 리뷰) */
+  async findMyReviews(userId: string, page = 1, limit = 10) {
+    // 업체 계정이면 받은 리뷰를, 일반 유저면 작성한 리뷰를 반환
+    const company = await this.prisma.company.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (company) {
+      return this.findReceivedReviews(company.id, page, limit);
+    }
+
+    return this.findByUser(userId, page, limit);
+  }
+
+  /** 내가 작성한 리뷰 목록 (일반 유저용) */
   async findByUser(userId: string, page = 1, limit = 10) {
     const where = { userId };
 
@@ -183,6 +198,37 @@ export class ReviewService {
         take: limit,
         include: {
           company: { select: { id: true, businessName: true } },
+          matching: {
+            select: {
+              id: true,
+              cleaningType: true,
+              address: true,
+              completedAt: true,
+            },
+          },
+        },
+      }),
+      this.prisma.review.count({ where }),
+    ]);
+
+    return {
+      data: reviews,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  /** 업체가 받은 리뷰 목록 (업체 유저용) */
+  async findReceivedReviews(companyId: string, page = 1, limit = 10) {
+    const where = { companyId, isVisible: true };
+
+    const [reviews, total] = await Promise.all([
+      this.prisma.review.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          user: { select: { id: true, name: true } },
           matching: {
             select: {
               id: true,
