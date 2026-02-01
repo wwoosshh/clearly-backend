@@ -56,6 +56,7 @@ export class ReviewService {
         companyId: matching.companyId,
         rating: dto.rating,
         content: dto.content,
+        images: dto.images,
       },
       include: {
         user: { select: { id: true, name: true } },

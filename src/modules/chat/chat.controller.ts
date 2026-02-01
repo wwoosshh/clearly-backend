@@ -65,13 +65,14 @@ export class ChatController {
   async sendMessage(
     @Param('id') roomId: string,
     @CurrentUser('id') userId: string,
-    @Body() body: { content: string; messageType?: string },
+    @Body() body: { content: string; messageType?: string; fileUrl?: string },
   ) {
     return this.chatService.sendMessage(
       roomId,
       userId,
       body.content,
       (body.messageType as any) || 'TEXT',
+      body.fileUrl,
     );
   }
 

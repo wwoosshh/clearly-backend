@@ -111,7 +111,12 @@ export class ChatGateway
   async handleSendMessage(
     @ConnectedSocket() client: Socket,
     @MessageBody()
-    payload: { roomId: string; content: string; messageType?: string },
+    payload: {
+      roomId: string;
+      content: string;
+      messageType?: string;
+      fileUrl?: string;
+    },
   ) {
     const userId = (client as any).userId;
     if (!userId) {
@@ -124,6 +129,7 @@ export class ChatGateway
         userId,
         payload.content,
         (payload.messageType as any) || 'TEXT',
+        payload.fileUrl,
       );
 
       // 해당 방에 있는 모든 클라이언트에게 전송

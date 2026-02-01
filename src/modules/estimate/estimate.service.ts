@@ -43,6 +43,7 @@ export class EstimateService {
         desiredTime: dto.desiredTime,
         message: dto.message,
         budget: dto.budget,
+        images: dto.images,
       },
       include: {
         user: { select: { id: true, name: true } },
@@ -203,6 +204,7 @@ export class EstimateService {
           ? new Date(dto.availableDate)
           : undefined,
         pointsUsed: ESTIMATE_POINT_COST,
+        images: dto.images,
       },
       include: {
         company: {

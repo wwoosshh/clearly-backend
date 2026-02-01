@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsArray, ArrayMaxSize, MaxLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateCompanyDto {
@@ -30,4 +30,11 @@ export class UpdateCompanyDto {
   @IsString({ message: '설명은 문자열이어야 합니다.' })
   @IsOptional()
   description?: string;
+
+  @ApiPropertyOptional({ description: '업체 프로필 이미지 URL 배열', type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(10, { message: '프로필 이미지는 최대 10개까지 등록할 수 있습니다.' })
+  profileImages?: string[];
 }

@@ -6,6 +6,8 @@ import {
   Min,
   Max,
   IsOptional,
+  IsArray,
+  ArrayMaxSize,
   MaxLength,
 } from 'class-validator';
 
@@ -26,4 +28,11 @@ export class CreateReviewDto {
   @IsString()
   @MaxLength(2000)
   content?: string;
+
+  @ApiPropertyOptional({ description: '리뷰 이미지 URL 배열', type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(5, { message: '이미지는 최대 5개까지 첨부할 수 있습니다.' })
+  images?: string[];
 }

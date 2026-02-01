@@ -5,6 +5,8 @@ import {
   IsOptional,
   IsInt,
   IsEnum,
+  IsArray,
+  ArrayMaxSize,
   Min,
   MaxLength,
 } from 'class-validator';
@@ -54,4 +56,11 @@ export class CreateEstimateRequestDto {
   @IsInt({ message: '예산은 정수여야 합니다.' })
   @Min(0)
   budget?: number;
+
+  @ApiPropertyOptional({ description: '참고 이미지 URL 배열', type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(10, { message: '이미지는 최대 10개까지 첨부할 수 있습니다.' })
+  images?: string[];
 }

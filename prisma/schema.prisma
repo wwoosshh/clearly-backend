@@ -428,6 +428,7 @@ model EstimateRequest {
   desiredTime   String?               @map("desired_time") @db.VarChar(50)
   message       String                @db.Text
   budget        Int?
+  images        Json?
   status        EstimateRequestStatus @default(OPEN)
   createdAt     DateTime              @default(now()) @map("created_at")
   updatedAt     DateTime              @updatedAt @map("updated_at")
@@ -449,6 +450,7 @@ model Estimate {
   estimatedDuration String?        @map("estimated_duration") @db.VarChar(50)
   availableDate     DateTime?      @map("available_date") @db.Date
   pointsUsed        Int            @default(0) @map("points_used")
+  images            Json?
   status            EstimateStatus @default(SUBMITTED)
   createdAt         DateTime       @default(now()) @map("created_at")
 
