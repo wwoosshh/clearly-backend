@@ -62,8 +62,8 @@ export class MatchingService {
     page?: number;
     limit?: number;
   }) {
-    const page = filters.page || 1;
-    const limit = filters.limit || 10;
+    const page = Number(filters.page) || 1;
+    const limit = Number(filters.limit) || 10;
 
     const where: any = {};
     if (filters.userId) where.userId = filters.userId;
