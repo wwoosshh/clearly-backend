@@ -12,7 +12,7 @@ import {
   Max,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 export class UpdateCompanyDto {
   @ApiPropertyOptional({ description: '상호명', example: '클리어리 청소' })
@@ -131,11 +131,13 @@ export class UpdateCompanyDto {
   @ApiPropertyOptional({ description: '포트폴리오 [{title, description, images}]' })
   @IsOptional()
   @IsArray()
+  @Transform(({ value }) => value)
   portfolio?: any[];
 
   @ApiPropertyOptional({ description: '자격증/서류 [{name, imageUrl}]' })
   @IsOptional()
   @IsArray()
+  @Transform(({ value }) => value)
   certificationDocs?: any[];
 
   @ApiPropertyOptional({ description: '사업자등록증 이미지 URL' })
@@ -176,5 +178,6 @@ export class UpdateCompanyDto {
   @ApiPropertyOptional({ description: 'Q&A [{question, answer}]' })
   @IsOptional()
   @IsArray()
+  @Transform(({ value }) => value)
   faq?: any[];
 }
