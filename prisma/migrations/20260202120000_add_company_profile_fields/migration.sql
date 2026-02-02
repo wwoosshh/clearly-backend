@@ -1,0 +1,17 @@
+-- AlterTable
+ALTER TABLE "companies" ADD COLUMN     "contact_hours" VARCHAR(200),
+ADD COLUMN     "employee_count" INTEGER,
+ADD COLUMN     "company_url" VARCHAR(500),
+ADD COLUMN     "experience_years" INTEGER,
+ADD COLUMN     "experience_description" TEXT,
+ADD COLUMN     "education" VARCHAR(300),
+ADD COLUMN     "service_detail" TEXT,
+ADD COLUMN     "portfolio" JSONB,
+ADD COLUMN     "certification_docs" JSONB,
+ADD COLUMN     "business_registration" VARCHAR(500),
+ADD COLUMN     "identity_verified" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "payment_methods" JSONB,
+ADD COLUMN     "contact_email" VARCHAR(255),
+ADD COLUMN     "service_range" INTEGER,
+ADD COLUMN     "videos" JSONB,
+ADD COLUMN     "faq" JSONB;

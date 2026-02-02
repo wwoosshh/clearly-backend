@@ -42,6 +42,16 @@ export class CompanyController {
     return this.companyService.searchCompanies(searchDto);
   }
 
+  @Get('my')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '내 업체 정보 조회' })
+  @ApiResponse({ status: 200, description: '내 업체 정보 조회 성공' })
+  @ApiResponse({ status: 404, description: '등록된 업체 없음' })
+  async getMyCompany(@CurrentUser('id') userId: string) {
+    return this.companyService.getMyCompany(userId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '업체 상세 조회' })
   @ApiResponse({ status: 200, description: '업체 상세 조회 성공' })

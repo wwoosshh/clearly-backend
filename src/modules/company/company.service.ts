@@ -45,6 +45,29 @@ export class CompanyService {
     return company;
   }
 
+  async getMyCompany(userId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            phone: true,
+            profileImage: true,
+          },
+        },
+      },
+    });
+
+    if (!company) {
+      throw new NotFoundException('등록된 업체 정보가 없습니다.');
+    }
+
+    return company;
+  }
+
   async findAll(page: number, limit: number) {
     const skip = (page - 1) * limit;
 
@@ -285,6 +308,10 @@ export class CompanyService {
           totalReviews: company.totalReviews,
           totalMatchings: company.totalMatchings,
           responseTime: company.responseTime,
+          identityVerified: company.identityVerified,
+          experienceYears: company.experienceYears,
+          contactHours: company.contactHours,
+          employeeCount: company.employeeCount,
           distance:
             distance != null ? Math.round(distance * 10) / 10 : null,
           score: Math.round(totalScore * 10) / 10,
@@ -424,7 +451,7 @@ export class CompanyService {
   /** 프로필 완성도 점수: 정보가 많이 채워진 업체 우대 */
   private calcProfileCompleteness(company: any): number {
     let filled = 0;
-    const total = 7;
+    const total = 16;
 
     if (company.description) filled++;
     if (Array.isArray(company.specialties) && (company.specialties as any[]).length > 0) filled++;
@@ -433,6 +460,15 @@ export class CompanyService {
     if (Array.isArray(company.profileImages) && (company.profileImages as any[]).length > 0) filled++;
     if (Array.isArray(company.certificates) && (company.certificates as any[]).length > 0) filled++;
     if (company.address) filled++;
+    if (company.contactHours) filled++;
+    if (company.employeeCount != null) filled++;
+    if (company.companyUrl) filled++;
+    if (company.experienceYears != null) filled++;
+    if (company.serviceDetail) filled++;
+    if (Array.isArray(company.portfolio) && (company.portfolio as any[]).length > 0) filled++;
+    if (company.contactEmail) filled++;
+    if (company.identityVerified) filled++;
+    if (Array.isArray(company.videos) && (company.videos as any[]).length > 0) filled++;
 
     return (filled / total) * 100;
   }

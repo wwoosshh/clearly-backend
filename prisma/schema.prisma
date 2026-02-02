@@ -212,6 +212,22 @@ model Company {
   totalMatchings     Int                @default(0) @map("total_matchings")
   responseTime       Int?               @map("response_time")
   isActive           Boolean            @default(true) @map("is_active")
+  contactHours       String?            @map("contact_hours") @db.VarChar(200)
+  employeeCount      Int?               @map("employee_count")
+  companyUrl         String?            @map("company_url") @db.VarChar(500)
+  experienceYears    Int?               @map("experience_years")
+  experienceDescription String?         @map("experience_description") @db.Text
+  education          String?            @db.VarChar(300)
+  serviceDetail      String?            @map("service_detail") @db.Text
+  portfolio          Json?
+  certificationDocs  Json?              @map("certification_docs")
+  businessRegistration String?          @map("business_registration") @db.VarChar(500)
+  identityVerified   Boolean            @default(false) @map("identity_verified")
+  paymentMethods     Json?              @map("payment_methods")
+  contactEmail       String?            @map("contact_email") @db.VarChar(255)
+  serviceRange       Int?               @map("service_range")
+  videos             Json?
+  faq                Json?
   searchScore        Decimal?           @map("search_score") @db.Decimal(5, 2)
   searchScoreAt      DateTime?          @map("search_score_at")
   approvedAt         DateTime?          @map("approved_at")
