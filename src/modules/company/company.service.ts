@@ -122,9 +122,17 @@ export class CompanyService {
       throw new ForbiddenException('본인 업체만 수정할 수 있습니다.');
     }
 
+    // DTO class instance → plain object 변환 (Json 필드가 Prisma에 올바르게 전달되도록)
+    const updateData: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== undefined) {
+        updateData[key] = value;
+      }
+    }
+
     return this.prisma.company.update({
       where: { id },
-      data,
+      data: updateData,
     });
   }
 
@@ -137,9 +145,17 @@ export class CompanyService {
       throw new NotFoundException('업체를 찾을 수 없습니다.');
     }
 
+    const updateData: Record<string, any> = {
+      verificationStatus: status as any,
+    };
+
+    if (status === 'APPROVED') {
+      updateData.approvedAt = new Date();
+    }
+
     return this.prisma.company.update({
       where: { id },
-      data: { verificationStatus: status as any },
+      data: updateData,
     });
   }
 

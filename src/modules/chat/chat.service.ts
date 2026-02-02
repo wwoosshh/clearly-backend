@@ -149,6 +149,17 @@ export class ChatService {
             { roomId },
           ),
         );
+
+        // 업체 유저의 첫 응답 → 평균 응답시간 자동 계산
+        if (senderId === room.company.userId) {
+          this.updateCompanyResponseTime(
+            room.companyId,
+            senderId,
+            room.createdAt,
+          ).catch((err) =>
+            this.logger.error(`응답시간 업데이트 실패: ${err}`),
+          );
+        }
       }
     }
 
@@ -389,5 +400,59 @@ export class ChatService {
     );
 
     return { ...updated, bothDeclined: false };
+  }
+
+  /**
+   * 업체 평균 응답시간 계산 및 업데이트
+   * 채팅방 생성 시점 ~ 업체의 첫 응답 시점까지의 시간(분)을 기준으로 평균을 구함
+   */
+  private async updateCompanyResponseTime(
+    companyId: string,
+    companyUserId: string,
+    roomCreatedAt: Date,
+  ) {
+    const responseMinutes = Math.round(
+      (Date.now() - roomCreatedAt.getTime()) / (1000 * 60),
+    );
+
+    // 24시간 초과 응답은 통계에서 제외 (비정상 케이스)
+    if (responseMinutes > 1440) return;
+
+    // 이 업체가 응답한 총 채팅방 수 (현재 포함)
+    const respondedRooms = await this.prisma.chatMessage.findMany({
+      where: {
+        senderId: companyUserId,
+        messageType: { not: 'SYSTEM' },
+        room: { companyId },
+      },
+      select: { roomId: true },
+      distinct: ['roomId'],
+    });
+    const totalResponses = respondedRooms.length;
+
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { responseTime: true },
+    });
+
+    let newResponseTime: number;
+    if (totalResponses <= 1 || company?.responseTime == null) {
+      newResponseTime = responseMinutes;
+    } else {
+      // 누적 평균: (기존평균 × (n-1) + 신규값) / n
+      newResponseTime = Math.round(
+        (company.responseTime * (totalResponses - 1) + responseMinutes) /
+          totalResponses,
+      );
+    }
+
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { responseTime: newResponseTime },
+    });
+
+    this.logger.log(
+      `업체 응답시간 업데이트: companyId=${companyId}, ${newResponseTime}분 (${totalResponses}건 평균)`,
+    );
   }
 }
