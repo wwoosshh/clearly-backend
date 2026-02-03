@@ -3,23 +3,32 @@ import {
   UnauthorizedException,
   ConflictException,
   ForbiddenException,
+  BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
+import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
 import { LoginDto } from './dto/login.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly geocodingService: GeocodingService,
+    private readonly mailService: MailService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -266,6 +275,83 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const { email } = dto;
+
+    // 보안: 이메일 존재 여부와 무관하게 동일 응답 (열거 공격 방지)
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (user && user.oauthProvider === 'LOCAL') {
+      const token = crypto.randomBytes(32).toString('hex');
+      const hashedToken = crypto
+        .createHash('sha256')
+        .update(token)
+        .digest('hex');
+      const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1시간
+
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetToken: hashedToken,
+          passwordResetExpiry: expiry,
+        },
+      });
+
+      try {
+        await this.mailService.sendPasswordResetEmail(email, token);
+      } catch (error) {
+        this.logger.error('비밀번호 재설정 이메일 발송 실패', error);
+      }
+    }
+
+    return {
+      message:
+        '해당 이메일로 비밀번호 재설정 링크를 발송했습니다. 이메일을 확인해주세요.',
+    };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const { token, password } = dto;
+
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        passwordResetToken: hashedToken,
+        passwordResetExpiry: { gt: new Date() },
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException(
+        '유효하지 않거나 만료된 토큰입니다. 비밀번호 재설정을 다시 요청해주세요.',
+      );
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash: hashedPassword,
+          passwordResetToken: null,
+          passwordResetExpiry: null,
+        },
+      }),
+      this.prisma.refreshToken.deleteMany({
+        where: { userId: user.id },
+      }),
+    ]);
+
+    return { message: '비밀번호가 성공적으로 변경되었습니다.' };
   }
 
   private async generateTokens(userId: string, email: string, role: string) {

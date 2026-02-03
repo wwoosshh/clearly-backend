@@ -130,6 +130,31 @@ export class CompanyService {
       }
     }
 
+    // 주소가 변경된 경우 위도/경도 재계산
+    if (
+      updateData.address &&
+      updateData.address !== company.address
+    ) {
+      try {
+        const coords = await this.geocodingService.geocodeAddress(
+          updateData.address,
+        );
+        if (coords) {
+          updateData.latitude = coords.latitude;
+          updateData.longitude = coords.longitude;
+          this.logger.log(
+            `업체 ${id} 주소 변경 → 좌표 재계산: ${coords.latitude}, ${coords.longitude}`,
+          );
+        } else {
+          this.logger.warn(
+            `업체 ${id} 주소 변경 → 좌표 변환 실패: "${updateData.address}"`,
+          );
+        }
+      } catch (err) {
+        this.logger.error(`업체 ${id} 주소 좌표 변환 오류: ${err}`);
+      }
+    }
+
     return this.prisma.company.update({
       where: { id },
       data: updateData,
