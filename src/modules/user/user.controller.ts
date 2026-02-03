@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Delete,
   Body,
   UseGuards,
   Param,
@@ -29,6 +30,13 @@ export class UserController {
   @ApiResponse({ status: 200, description: '프로필 조회 성공' })
   async getMyProfile(@CurrentUser('id') userId: string) {
     return this.userService.findById(userId);
+  }
+
+  @Delete('me')
+  @ApiOperation({ summary: '회원탈퇴 요청' })
+  @ApiResponse({ status: 200, description: '탈퇴 요청 성공' })
+  async requestDeletion(@CurrentUser('id') userId: string) {
+    return this.userService.requestDeletion(userId);
   }
 
   @Patch('me')

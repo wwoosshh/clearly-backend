@@ -86,6 +86,30 @@ export class UserService {
     };
   }
 
+  async requestDeletion(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id },
+        data: {
+          isActive: false,
+          deactivatedAt: new Date(),
+        },
+      });
+
+      await tx.refreshToken.deleteMany({
+        where: { userId: id },
+      });
+    });
+
+    return { message: '회원탈퇴 요청이 처리되었습니다. 7일 후 데이터가 삭제됩니다.' };
+  }
+
   async deactivate(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
 

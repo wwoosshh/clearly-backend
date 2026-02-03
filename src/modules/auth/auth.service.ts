@@ -161,6 +161,11 @@ export class AuthService {
     const user = await this.validateUser(email, password);
 
     if (!user.isActive) {
+      if (user.deactivatedAt) {
+        throw new ForbiddenException(
+          '탈퇴 처리 중인 계정입니다. 복구를 원하시면 고객센터에 문의하세요.',
+        );
+      }
       throw new ForbiddenException(
         '비활성화된 계정입니다. 업체 계정인 경우 관리자 승인을 기다려주세요.',
       );

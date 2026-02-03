@@ -224,9 +224,14 @@ export class AdminService {
     const newIsActive = !user.isActive;
 
     return this.prisma.$transaction(async (tx) => {
+      const updateData: any = { isActive: newIsActive };
+      if (newIsActive) {
+        updateData.deactivatedAt = null;
+      }
+
       const updatedUser = await tx.user.update({
         where: { id: userId },
-        data: { isActive: newIsActive },
+        data: updateData,
       });
 
       if (user.role === 'COMPANY' && user.company) {

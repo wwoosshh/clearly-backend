@@ -76,4 +76,174 @@ export class AdminCronService {
       `만료 견적 처리 완료: 성공 ${successCount}건, 실패 ${failCount}건`,
     );
   }
+
+  /**
+   * 탈퇴 요청 후 7일 경과한 사용자 데이터 완전 삭제
+   * 매일 새벽 3시 실행
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  async handleDeactivatedUsers() {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const usersToDelete = await this.prisma.user.findMany({
+      where: {
+        deactivatedAt: { not: null, lt: sevenDaysAgo },
+        isActive: false,
+      },
+      include: {
+        company: { select: { id: true } },
+      },
+    });
+
+    if (usersToDelete.length === 0) return;
+
+    this.logger.log(
+      `탈퇴 유저 데이터 삭제 시작: ${usersToDelete.length}명 발견`,
+    );
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const user of usersToDelete) {
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          const companyId = user.company?.id;
+
+          // 1. ChatMessage 삭제 (유저가 보낸 메시지)
+          await tx.chatMessage.deleteMany({
+            where: { senderId: user.id },
+          });
+
+          // 2. 유저의 ChatRoom에 남은 메시지 삭제 후 ChatRoom 삭제
+          if (companyId) {
+            // 업체 채팅방의 메시지 삭제
+            const companyChatRooms = await tx.chatRoom.findMany({
+              where: { companyId },
+              select: { id: true },
+            });
+            if (companyChatRooms.length > 0) {
+              await tx.chatMessage.deleteMany({
+                where: { roomId: { in: companyChatRooms.map((r) => r.id) } },
+              });
+            }
+            await tx.chatRoom.deleteMany({ where: { companyId } });
+          }
+
+          // 유저의 채팅방 메시지 삭제 후 채팅방 삭제
+          const userChatRooms = await tx.chatRoom.findMany({
+            where: { userId: user.id },
+            select: { id: true },
+          });
+          if (userChatRooms.length > 0) {
+            await tx.chatMessage.deleteMany({
+              where: { roomId: { in: userChatRooms.map((r) => r.id) } },
+            });
+          }
+          await tx.chatRoom.deleteMany({ where: { userId: user.id } });
+
+          // 3. Review 삭제
+          await tx.review.deleteMany({ where: { userId: user.id } });
+          if (companyId) {
+            await tx.review.deleteMany({ where: { companyId } });
+          }
+
+          // 4. Report 삭제
+          await tx.report.deleteMany({ where: { reporterId: user.id } });
+
+          // 5. 업체 관련 데이터 삭제
+          if (companyId) {
+            // Matching.estimateId FK 해제
+            await tx.matching.updateMany({
+              where: { companyId },
+              data: { estimateId: null },
+            });
+
+            // ChatRoom.estimateId FK는 이미 채팅방 삭제됨
+
+            // Estimate 삭제
+            await tx.estimate.deleteMany({ where: { companyId } });
+
+            // PointTransaction → PointWallet 삭제
+            const wallet = await tx.pointWallet.findUnique({
+              where: { companyId },
+            });
+            if (wallet) {
+              await tx.pointTransaction.deleteMany({
+                where: { walletId: wallet.id },
+              });
+              await tx.pointWallet.delete({ where: { id: wallet.id } });
+            }
+
+            // Payment → CompanySubscription 삭제
+            const subscriptions = await tx.companySubscription.findMany({
+              where: { companyId },
+              select: { id: true },
+            });
+            if (subscriptions.length > 0) {
+              await tx.payment.deleteMany({
+                where: {
+                  subscriptionId: { in: subscriptions.map((s) => s.id) },
+                },
+              });
+              await tx.companySubscription.deleteMany({
+                where: { companyId },
+              });
+            }
+
+            // Matching(companyId) 삭제
+            await tx.matching.deleteMany({ where: { companyId } });
+          }
+
+          // 6. 유저의 EstimateRequest 내 Estimate FK 해제 후 삭제
+          const estimateRequests = await tx.estimateRequest.findMany({
+            where: { userId: user.id },
+            select: { id: true },
+          });
+          if (estimateRequests.length > 0) {
+            const erIds = estimateRequests.map((er) => er.id);
+
+            // Matching.estimateId FK 해제 (이 견적요청에 연결된 견적들)
+            const estimates = await tx.estimate.findMany({
+              where: { estimateRequestId: { in: erIds } },
+              select: { id: true },
+            });
+            if (estimates.length > 0) {
+              await tx.matching.updateMany({
+                where: { estimateId: { in: estimates.map((e) => e.id) } },
+                data: { estimateId: null },
+              });
+            }
+
+            await tx.estimate.deleteMany({
+              where: { estimateRequestId: { in: erIds } },
+            });
+          }
+
+          // 7. EstimateRequest 삭제
+          await tx.estimateRequest.deleteMany({ where: { userId: user.id } });
+
+          // 8. Matching(userId) 삭제
+          await tx.matching.deleteMany({ where: { userId: user.id } });
+
+          // 9. User 삭제 (Cascade: Company, RefreshToken, Notification; SetNull: Inquiry)
+          await tx.user.delete({ where: { id: user.id } });
+        });
+
+        successCount++;
+        this.logger.log(
+          `탈퇴 유저 삭제 완료: userId=${user.id}, email=${user.email}`,
+        );
+      } catch (error) {
+        failCount++;
+        this.logger.error(
+          `탈퇴 유저 삭제 실패: userId=${user.id}, error=${error}`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `탈퇴 유저 데이터 삭제 완료: 성공 ${successCount}건, 실패 ${failCount}건`,
+    );
+  }
 }
