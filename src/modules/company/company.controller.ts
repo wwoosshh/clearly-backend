@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -69,7 +70,18 @@ export class CompanyController {
     @Param('id') id: string,
     @Body() updateCompanyDto: UpdateCompanyDto,
     @CurrentUser('id') userId: string,
+    @Req() req: any,
   ) {
+    // class-transformer의 enableImplicitConversion이 Json 필드의
+    // nested object를 빈 배열로 손상시키므로 raw body에서 원본 복원
+    const raw = req.body;
+    const jsonFields = ['portfolio', 'certificationDocs', 'faq'] as const;
+    for (const field of jsonFields) {
+      if (raw[field] !== undefined) {
+        (updateCompanyDto as any)[field] = raw[field];
+      }
+    }
+
     return this.companyService.update(id, updateCompanyDto, userId);
   }
 }
