@@ -25,9 +25,10 @@ export class MailService {
       'http://localhost:3000',
     );
     const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
+    const smtpUser = this.configService.get('SMTP_USER', '');
     const from = this.configService.get(
       'SMTP_FROM',
-      'Clearly <noreply@clearly.co.kr>',
+      `Clearly <${smtpUser}>`,
     );
 
     const html = `
