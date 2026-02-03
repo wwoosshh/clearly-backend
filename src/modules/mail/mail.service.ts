@@ -1,23 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private transporter: nodemailer.Transporter;
+  private resend: Resend;
+  private from: string;
 
   constructor(private readonly configService: ConfigService) {
-    const port = this.configService.get<number>('SMTP_PORT', 465);
-    this.transporter = nodemailer.createTransport({
-      host: this.configService.get('SMTP_HOST', 'smtp.gmail.com'),
-      port,
-      secure: port === 465,
-      auth: {
-        user: this.configService.get('SMTP_USER'),
-        pass: this.configService.get('SMTP_PASSWORD'),
-      },
-    });
+    this.resend = new Resend(this.configService.get('RESEND_API_KEY', ''));
+    this.from = this.configService.get(
+      'RESEND_FROM',
+      'Clearly <onboarding@resend.dev>',
+    );
   }
 
   async sendPasswordResetEmail(to: string, token: string): Promise<void> {
@@ -26,11 +22,6 @@ export class MailService {
       'http://localhost:3000',
     );
     const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
-    const smtpUser = this.configService.get('SMTP_USER', '');
-    const from = this.configService.get(
-      'SMTP_FROM',
-      `Clearly <${smtpUser}>`,
-    );
 
     const html = `
       <!DOCTYPE html>
@@ -83,12 +74,18 @@ export class MailService {
     `;
 
     try {
-      await this.transporter.sendMail({
-        from,
+      const { error } = await this.resend.emails.send({
+        from: this.from,
         to,
         subject: '[Clearly] 비밀번호 재설정',
         html,
       });
+
+      if (error) {
+        this.logger.error(`이메일 발송 실패: ${to}`, error);
+        throw new Error(error.message);
+      }
+
       this.logger.log(`비밀번호 재설정 이메일 발송 완료: ${to}`);
     } catch (error) {
       this.logger.error(`이메일 발송 실패: ${to}`, error);
