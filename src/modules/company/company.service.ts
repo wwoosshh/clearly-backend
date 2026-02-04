@@ -206,12 +206,21 @@ export class CompanyService {
       }
     }
 
-    // 승인된 활성 업체 조회 (좌표 필수 조건 제거)
+    // --- DB 레벨 필터링 (키워드/전문분야/지역) ---
+    const whereConditions: any = {
+      verificationStatus: 'APPROVED',
+      isActive: true,
+    };
+
+    if (keyword) {
+      whereConditions.OR = [
+        { businessName: { contains: keyword, mode: 'insensitive' } },
+        { description: { contains: keyword, mode: 'insensitive' } },
+      ];
+    }
+
     const companies = await this.prisma.company.findMany({
-      where: {
-        verificationStatus: 'APPROVED',
-        isActive: true,
-      },
+      where: whereConditions,
       include: {
         user: {
           select: {
@@ -222,12 +231,8 @@ export class CompanyService {
           },
         },
         subscriptions: {
-          where: {
-            status: 'ACTIVE',
-          },
-          include: {
-            plan: true,
-          },
+          where: { status: 'ACTIVE' },
+          include: { plan: true },
           take: 1,
           orderBy: { createdAt: 'desc' },
         },
@@ -236,10 +241,28 @@ export class CompanyService {
 
     const hasSearchLocation = latitude != null && longitude != null;
 
-    // 필터링 + 점수 산출
+    // --- 메모리 필터링 (JSON 필드 + 거리: DB에서 직접 필터 불가) ---
     const companiesWithScore = companies
       .map((company) => {
-        // 키워드 필터: 업체명 또는 소개에 포함
+        // 전문분야 필터 (JSON 배열이므로 메모리에서 처리)
+        if (specialty) {
+          const specs = Array.isArray(company.specialties)
+            ? (company.specialties as string[])
+            : [];
+          if (!specs.some((s) => s.includes(specialty))) return null;
+        }
+
+        // 지역 필터 (JSON 배열이므로 메모리에서 처리)
+        if (region) {
+          const areas = Array.isArray(company.serviceAreas)
+            ? (company.serviceAreas as string[])
+            : [];
+          const areaMatch = areas.some((a) => a.includes(region));
+          const addrMatch = company.address?.includes(region);
+          if (!areaMatch && !addrMatch) return null;
+        }
+
+        // 키워드가 specialties에 포함되는 경우도 매칭 (DB OR에서 누락될 수 있음)
         if (keyword) {
           const kw = keyword.toLowerCase();
           const nameMatch = company.businessName?.toLowerCase().includes(kw);
@@ -250,24 +273,6 @@ export class CompanyService {
               )
             : false;
           if (!nameMatch && !descMatch && !specMatch) return null;
-        }
-
-        // 전문분야 필터
-        if (specialty) {
-          const specs = Array.isArray(company.specialties)
-            ? (company.specialties as string[])
-            : [];
-          if (!specs.some((s) => s.includes(specialty))) return null;
-        }
-
-        // 지역 필터: serviceAreas 또는 address에 포함
-        if (region) {
-          const areas = Array.isArray(company.serviceAreas)
-            ? (company.serviceAreas as string[])
-            : [];
-          const areaMatch = areas.some((a) => a.includes(region));
-          const addrMatch = company.address?.includes(region);
-          if (!areaMatch && !addrMatch) return null;
         }
 
         // 거리 계산 (좌표가 있는 경우에만)
@@ -286,22 +291,18 @@ export class CompanyService {
           if (distance > maxDistance) return null;
         }
 
-        // 구독 등급 가중치
+        // 구독 등급 가중치 (구독 없으면 기본 1.0 적용)
         const subscription = company.subscriptions[0];
         const priorityWeight = subscription?.plan?.priorityWeight ?? 1.0;
 
-        // 가중 점수 산출 (위치 유무에 따라 가중치 조정)
+        // 점수 계산
         const ratingScore = this.calcRatingScore(
           company.averageRating != null
             ? Number(company.averageRating)
             : null,
         );
-        const responseScore = this.calcResponseTimeScore(
-          company.responseTime,
-        );
-        const matchingScore = this.calcMatchingScore(
-          company.totalMatchings,
-        );
+        const responseScore = this.calcResponseTimeScore(company.responseTime);
+        const matchingScore = this.calcMatchingScore(company.totalMatchings);
         const subscriptionScore = this.calcSubscriptionScore(
           typeof priorityWeight === 'object' && priorityWeight !== null
             ? (priorityWeight as any).toNumber()
@@ -309,17 +310,20 @@ export class CompanyService {
         );
         const profileScore = this.calcProfileCompleteness(company);
 
+        // 신규 업체 부스트 (가입 30일 이내 +15점, 이후 60일까지 점진 감소)
+        const boostScore = this.calcNewCompanyBoost(company.approvedAt);
+
         // 업체 고유 품질 점수 (거리 무관, DB 저장용)
         const baseScore =
           ratingScore * 0.35 +
           profileScore * 0.25 +
           responseScore * 0.15 +
           matchingScore * 0.15 +
-          subscriptionScore * 0.1;
+          subscriptionScore * 0.1 +
+          boostScore;
 
         let totalScore: number;
         if (hasSearchLocation && distance != null) {
-          // 위치 정보 있을 때: 거리 포함 (검색 결과 정렬용)
           const distanceScore = this.calcDistanceScore(distance, maxDistance);
           totalScore =
             distanceScore * 0.3 +
@@ -327,7 +331,8 @@ export class CompanyService {
             profileScore * 0.15 +
             responseScore * 0.1 +
             matchingScore * 0.1 +
-            subscriptionScore * 0.1;
+            subscriptionScore * 0.1 +
+            boostScore;
         } else {
           totalScore = baseScore;
         }
@@ -353,6 +358,7 @@ export class CompanyService {
           experienceYears: company.experienceYears,
           contactHours: company.contactHours,
           employeeCount: company.employeeCount,
+          isNew: boostScore > 0,
           distance:
             distance != null ? Math.round(distance * 10) / 10 : null,
           score: Math.round(totalScore * 10) / 10,
@@ -365,8 +371,16 @@ export class CompanyService {
     // 정렬
     this.sortCompanies(companiesWithScore, sortBy);
 
-    // 업체 고유 품질 점수를 DB에 저장 (거리 제외, 비동기)
-    const scoreUpdates = companiesWithScore.map((c) =>
+    // 업체 고유 품질 점수를 DB에 저장 (비동기, 페이지 내 업체만)
+    const total = companiesWithScore.length;
+    const totalPages = Math.ceil(total / limit);
+    const startIndex = (page - 1) * limit;
+    const paginatedData = companiesWithScore.slice(
+      startIndex,
+      startIndex + limit,
+    );
+
+    const scoreUpdates = paginatedData.map((c: any) =>
       this.prisma.company.update({
         where: { id: c.id },
         data: {
@@ -376,15 +390,6 @@ export class CompanyService {
       }),
     );
     Promise.allSettled(scoreUpdates).catch(() => {});
-
-    // 페이지네이션
-    const total = companiesWithScore.length;
-    const totalPages = Math.ceil(total / limit);
-    const startIndex = (page - 1) * limit;
-    const paginatedData = companiesWithScore.slice(
-      startIndex,
-      startIndex + limit,
-    );
 
     return {
       data: paginatedData,
@@ -487,6 +492,23 @@ export class CompanyService {
   /** 구독등급 점수: priorityWeight 기반, 3.0=100 */
   private calcSubscriptionScore(priorityWeight: number): number {
     return Math.min(100, (priorityWeight / 3.0) * 100);
+  }
+
+  /** 신규 업체 부스트: 승인 후 30일 이내 +15점, 60일까지 점진 감소 */
+  private calcNewCompanyBoost(approvedAt: Date | null): number {
+    if (!approvedAt) return 0;
+
+    const now = new Date();
+    const diffMs = now.getTime() - new Date(approvedAt).getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+    if (diffDays <= 30) {
+      return 15; // 30일 이내: 최대 부스트
+    } else if (diffDays <= 60) {
+      // 30~60일: 15에서 0으로 선형 감소
+      return Math.round(15 * (1 - (diffDays - 30) / 30) * 10) / 10;
+    }
+    return 0; // 60일 이후: 부스트 없음
   }
 
   /** 프로필 완성도 점수: 정보가 많이 채워진 업체 우대 */

@@ -6,6 +6,9 @@ export const NOTIFICATION_EVENTS = {
   NEW_MESSAGE_FIRST_REPLY: 'notification.message.firstReply',
   NEW_REVIEW: 'notification.review.new',
   POINT_CHANGE: 'notification.point.change',
+  MATCHING_COMPLETED: 'notification.matching.completed',
+  MATCHING_CANCELLED: 'notification.matching.cancelled',
+  COMPLETION_REPORTED: 'notification.matching.completionReported',
 } as const;
 
 export class NotificationEvent {

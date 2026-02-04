@@ -17,7 +17,7 @@ import {
   BulkNotificationEvent,
 } from '../notification/notification.events';
 
-const ESTIMATE_POINT_COST = 100; // 견적 제출 시 차감 포인트
+const ESTIMATE_POINT_COST = 50; // 견적 제출 시 차감 포인트
 
 @Injectable()
 export class EstimateService {
@@ -32,6 +32,37 @@ export class EstimateService {
 
   /** 견적요청 생성 (USER) */
   async createEstimateRequest(userId: string, dto: CreateEstimateRequestDto) {
+    // 동시 활성 견적 요청 최대 3건 제한
+    const activeRequestCount = await this.prisma.estimateRequest.count({
+      where: {
+        userId,
+        status: 'OPEN',
+      },
+    });
+    if (activeRequestCount >= 3) {
+      throw new BadRequestException(
+        '동시에 최대 3건의 견적요청만 가능합니다. 기존 요청이 마감된 후 다시 시도해주세요.',
+      );
+    }
+
+    // 동일 주소 + 동일 청소 유형으로 7일 이내 중복 요청 차단
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const duplicateRequest = await this.prisma.estimateRequest.findFirst({
+      where: {
+        userId,
+        address: dto.address,
+        cleaningType: dto.cleaningType,
+        createdAt: { gte: sevenDaysAgo },
+      },
+    });
+    if (duplicateRequest) {
+      throw new BadRequestException(
+        '동일 주소/청소 유형으로 7일 이내 중복 요청은 불가합니다.',
+      );
+    }
+
     const request = await this.prisma.estimateRequest.create({
       data: {
         userId,
@@ -52,13 +83,49 @@ export class EstimateService {
 
     this.logger.log(`견적요청 생성: id=${request.id}, userId=${userId}`);
 
-    // 전문분야 매칭 업체들에게 알림
-    const matchingCompanies = await this.prisma.company.findMany({
+    // 지역 + 전문분야 기반 타겟 업체 필터링
+    const allApprovedCompanies = await this.prisma.company.findMany({
       where: {
         isActive: true,
         verificationStatus: 'APPROVED',
       },
-      select: { userId: true },
+      select: {
+        userId: true,
+        serviceAreas: true,
+        specialties: true,
+        address: true,
+      },
+    });
+
+    // 견적 요청의 지역/전문분야와 매칭되는 업체만 필터링
+    const matchingCompanies = allApprovedCompanies.filter((company) => {
+      // 전문분야 매칭: 업체의 specialties에 요청한 cleaningType이 포함되어야 함
+      const specs = Array.isArray(company.specialties)
+        ? (company.specialties as string[])
+        : [];
+      const hasSpecialty =
+        specs.length === 0 || specs.some((s) => s === dto.cleaningType);
+
+      // 지역 매칭: 업체의 serviceAreas 또는 address가 요청 주소와 관련 있어야 함
+      const areas = Array.isArray(company.serviceAreas)
+        ? (company.serviceAreas as string[])
+        : [];
+      // 주소에서 시/도, 구/군 추출 (예: "서울특별시 강남구 ..." → ["서울", "강남"])
+      const requestRegionTokens = dto.address
+        .replace(/특별시|광역시|특별자치시|특별자치도/g, '')
+        .split(/[\s,]+/)
+        .filter((t) => t.length >= 2)
+        .slice(0, 3);
+
+      const hasRegion =
+        areas.length === 0 ||
+        areas.some((area) =>
+          requestRegionTokens.some((token) => area.includes(token)),
+        ) ||
+        (company.address &&
+          requestRegionTokens.some((token) => company.address!.includes(token)));
+
+      return hasSpecialty && hasRegion;
     });
 
     if (matchingCompanies.length > 0) {
@@ -184,6 +251,16 @@ export class EstimateService {
       throw new BadRequestException('이미 견적을 제출하셨습니다.');
     }
 
+    // 견적 수 제한 확인
+    const currentEstimateCount = await this.prisma.estimate.count({
+      where: { estimateRequestId },
+    });
+    if (currentEstimateCount >= (request.maxEstimates ?? 5)) {
+      throw new BadRequestException(
+        `이 견적요청은 최대 ${request.maxEstimates ?? 5}개의 견적까지만 받을 수 있습니다.`,
+      );
+    }
+
     // 포인트 차감
     await this.pointService.usePoints(
       company.id,
@@ -307,15 +384,27 @@ export class EstimateService {
         data: { status: 'ACCEPTED' },
       });
 
-      // 2. 같은 요청의 다른 견적 거절 처리
-      await tx.estimate.updateMany({
+      // 2. 같은 요청의 다른 견적 거절 처리 + 50% 포인트 환불
+      const otherEstimates = await tx.estimate.findMany({
         where: {
           estimateRequestId: estimate.estimateRequestId,
           id: { not: estimateId },
           status: 'SUBMITTED',
         },
-        data: { status: 'REJECTED' },
+        select: { id: true, companyId: true, pointsUsed: true },
       });
+
+      if (otherEstimates.length > 0) {
+        await tx.estimate.updateMany({
+          where: {
+            id: { in: otherEstimates.map((e) => e.id) },
+          },
+          data: { status: 'REJECTED' },
+        });
+
+        // 자동 거절된 견적에 대해 50% 포인트 환불 (트랜잭션 외부에서 처리)
+        this.refundAutoRejectedEstimates(otherEstimates);
+      }
 
       // 3. 매칭 생성
       const matching = await tx.matching.create({
@@ -425,6 +514,33 @@ export class EstimateService {
     );
 
     return updated;
+  }
+
+  /** 자동 거절된 견적에 대한 50% 포인트 환불 (비동기) */
+  private async refundAutoRejectedEstimates(
+    estimates: Array<{ id: string; companyId: string; pointsUsed: number }>,
+  ) {
+    for (const est of estimates) {
+      if (est.pointsUsed <= 0) continue;
+      const refundAmount = Math.floor(est.pointsUsed * 0.5);
+      if (refundAmount <= 0) continue;
+
+      try {
+        await this.pointService.refundPoints(
+          est.companyId,
+          refundAmount,
+          '타 견적 수락에 따른 자동 거절 환불 (50%)',
+          est.id,
+        );
+        this.logger.log(
+          `자동 거절 환불: estimateId=${est.id}, companyId=${est.companyId}, refund=${refundAmount}P`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `자동 거절 환불 실패: estimateId=${est.id}, error=${error}`,
+        );
+      }
+    }
   }
 
   /** 업체가 제출한 견적 목록 (COMPANY) */

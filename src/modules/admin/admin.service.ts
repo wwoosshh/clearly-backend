@@ -1,15 +1,21 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PointService } from '../point/point.service';
 import {
   ResolveReportDto,
   ReportActionType,
 } from './dto/resolve-report.dto';
 
+const WELCOME_POINT_AMOUNT = 500; // 신규 업체 승인 시 무료 지급 포인트
+
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pointService: PointService,
+  ) {}
 
   // ─── 대시보드 ───────────────────────────────────────────
 
@@ -377,8 +383,8 @@ export class AdminService {
       throw new NotFoundException('업체를 찾을 수 없습니다.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updatedCompany = await tx.company.update({
+    const updatedCompany = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.company.update({
         where: { id: companyId },
         data: {
           verificationStatus: 'APPROVED',
@@ -391,8 +397,26 @@ export class AdminService {
         data: { isActive: true },
       });
 
-      return updatedCompany;
+      return updated;
     });
+
+    // 신규 업체 승인 시 웰컴 포인트 지급 (트랜잭션 외부 - 실패해도 승인은 유지)
+    try {
+      await this.pointService.chargePoints(
+        companyId,
+        WELCOME_POINT_AMOUNT,
+        '신규 업체 승인 웰컴 포인트',
+      );
+      this.logger.log(
+        `웰컴 포인트 지급: companyId=${companyId}, amount=${WELCOME_POINT_AMOUNT}P`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `웰컴 포인트 지급 실패: companyId=${companyId}, error=${error}`,
+      );
+    }
+
+    return updatedCompany;
   }
 
   async rejectCompany(companyId: string, rejectionReason: string) {

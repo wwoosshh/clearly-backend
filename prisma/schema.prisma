@@ -264,11 +264,14 @@ model Matching {
   desiredTime    String?        @map("desired_time") @db.VarChar(50)
   message        String?        @db.Text
   estimatedPrice Int?           @map("estimated_price")
-  rejectionReason String?       @map("rejection_reason") @db.Text
-  estimateId     String?        @unique @map("estimate_id")
-  completedAt    DateTime?      @map("completed_at")
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
+  rejectionReason    String?       @map("rejection_reason") @db.Text
+  cancelledBy        String?       @map("cancelled_by") @db.VarChar(20)
+  completionImages   Json?         @map("completion_images")
+  completionReportedAt DateTime?   @map("completion_reported_at")
+  estimateId         String?       @unique @map("estimate_id")
+  completedAt        DateTime?     @map("completed_at")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
 
   user     User      @relation(fields: [userId], references: [id])
   company  Company?  @relation(fields: [companyId], references: [id])
@@ -326,16 +329,23 @@ model ChatMessage {
 }
 
 model Review {
-  id         String   @id @default(uuid())
-  matchingId String   @unique @map("matching_id")
-  userId     String   @map("user_id")
-  companyId  String   @map("company_id")
-  rating     Int      @db.SmallInt
-  content    String?  @db.Text
-  images     Json?
-  isVisible  Boolean  @default(true) @map("is_visible")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id              String   @id @default(uuid())
+  matchingId      String   @unique @map("matching_id")
+  userId          String   @map("user_id")
+  companyId       String   @map("company_id")
+  rating          Int      @db.SmallInt
+  qualityRating   Int?     @map("quality_rating") @db.SmallInt
+  priceRating     Int?     @map("price_rating") @db.SmallInt
+  punctualityRating Int?   @map("punctuality_rating") @db.SmallInt
+  kindnessRating  Int?     @map("kindness_rating") @db.SmallInt
+  content         String?  @db.Text
+  images          Json?
+  companyReply    String?  @map("company_reply") @db.Text
+  companyRepliedAt DateTime? @map("company_replied_at")
+  helpfulCount    Int      @default(0) @map("helpful_count")
+  isVisible       Boolean  @default(true) @map("is_visible")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   matching Matching @relation(fields: [matchingId], references: [id])
   user     User     @relation(fields: [userId], references: [id])
@@ -448,6 +458,7 @@ model EstimateRequest {
   message       String                @db.Text
   budget        Int?
   images        Json?
+  maxEstimates  Int                   @default(5) @map("max_estimates")
   status        EstimateRequestStatus @default(OPEN)
   createdAt     DateTime              @default(now()) @map("created_at")
   updatedAt     DateTime              @updatedAt @map("updated_at")

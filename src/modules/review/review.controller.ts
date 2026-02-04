@@ -81,6 +81,26 @@ export class ReviewController {
     return this.reviewService.update(id, userId, body);
   }
 
+  @Post(':id/reply')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '업체 리뷰 답글 작성' })
+  @ApiResponse({ status: 200, description: '답글 작성 성공' })
+  async addCompanyReply(
+    @Param('id') reviewId: string,
+    @CurrentUser('id') userId: string,
+    @Body() body: { reply: string },
+  ) {
+    return this.reviewService.addCompanyReply(reviewId, userId, body.reply);
+  }
+
+  @Post(':id/helpful')
+  @ApiOperation({ summary: '도움이 됐어요 투표' })
+  @ApiResponse({ status: 200, description: '투표 성공' })
+  async markHelpful(@Param('id') reviewId: string) {
+    return this.reviewService.markHelpful(reviewId);
+  }
+
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

@@ -162,10 +162,16 @@ export class AuthService {
 
     if (!user.isActive) {
       if (user.deactivatedAt) {
+        this.logger.warn(
+          `로그인 시도 - 탈퇴 처리 중 계정: userId=${user.id}, email=${email}`,
+        );
         throw new ForbiddenException(
           '탈퇴 처리 중인 계정입니다. 복구를 원하시면 고객센터에 문의하세요.',
         );
       }
+      this.logger.warn(
+        `로그인 시도 - 비활성 계정: userId=${user.id}, email=${email}`,
+      );
       throw new ForbiddenException(
         '비활성화된 계정입니다. 업체 계정인 경우 관리자 승인을 기다려주세요.',
       );
@@ -245,6 +251,7 @@ export class AuthService {
     });
 
     if (!user || !user.passwordHash) {
+      this.logger.warn(`로그인 실패 - 존재하지 않는 이메일: ${email}`);
       throw new UnauthorizedException(
         '이메일 또는 비밀번호가 올바르지 않습니다.',
       );
@@ -253,6 +260,9 @@ export class AuthService {
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!isPasswordValid) {
+      this.logger.warn(
+        `로그인 실패 - 비밀번호 불일치: userId=${user.id}, email=${email}`,
+      );
       throw new UnauthorizedException(
         '이메일 또는 비밀번호가 올바르지 않습니다.',
       );

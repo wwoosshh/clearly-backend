@@ -16,6 +16,8 @@ import {
 } from '@nestjs/swagger';
 import { MatchingService } from './matching.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('매칭')
@@ -43,7 +45,6 @@ export class MatchingController {
     @CurrentUser() user: any,
     @Query() filters: any,
   ) {
-    // 역할에 따라 필터 자동 적용
     if (user.role === 'USER') {
       filters.userId = userId;
     }
@@ -65,5 +66,46 @@ export class MatchingController {
     @Body() body: { status: string },
   ) {
     return this.matchingService.updateStatus(id, body.status);
+  }
+
+  @Post('requests/:id/report-completion')
+  @UseGuards(RolesGuard)
+  @Roles('COMPANY')
+  @ApiOperation({ summary: '서비스 완료 보고 (업체)' })
+  @ApiResponse({ status: 200, description: '완료 보고 성공' })
+  async reportCompletion(
+    @CurrentUser('id') userId: string,
+    @Param('id') matchingId: string,
+    @Body() body: { images: string[] },
+  ) {
+    return this.matchingService.reportCompletion(userId, matchingId, body.images);
+  }
+
+  @Patch('requests/:id/confirm-completion')
+  @UseGuards(RolesGuard)
+  @Roles('USER')
+  @ApiOperation({ summary: '서비스 완료 확인 (사용자)' })
+  @ApiResponse({ status: 200, description: '완료 확인 성공' })
+  async confirmCompletion(
+    @CurrentUser('id') userId: string,
+    @Param('id') matchingId: string,
+  ) {
+    return this.matchingService.confirmCompletion(userId, matchingId);
+  }
+
+  @Patch('requests/:id/cancel')
+  @ApiOperation({ summary: '매칭 취소' })
+  @ApiResponse({ status: 200, description: '취소 성공' })
+  async cancelMatching(
+    @CurrentUser() user: any,
+    @Param('id') matchingId: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.matchingService.cancelMatching(
+      user.id,
+      user.role,
+      matchingId,
+      body.reason,
+    );
   }
 }

@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -21,13 +23,21 @@ import { ReportModule } from './modules/report/report.module';
 import { FaqModule } from './modules/faq/faq.module';
 import { InquiryModule } from './modules/inquiry/inquiry.module';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: `.env${process.env.NODE_ENV === 'production' ? '.production' : ''}`,
     }),
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60000,
+        limit: 100,
+      },
+    ]),
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
     PrismaModule,
@@ -47,8 +57,15 @@ import { GeocodingModule } from './modules/geocoding/geocoding.module';
     FaqModule,
     InquiryModule,
     GeocodingModule,
+    HealthModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

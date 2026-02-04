@@ -13,6 +13,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
@@ -28,6 +29,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: '일반 회원가입' })
   @ApiResponse({ status: 201, description: '회원가입 성공' })
   @ApiResponse({ status: 409, description: '이미 등록된 이메일' })
@@ -36,6 +38,7 @@ export class AuthController {
   }
 
   @Post('register/company')
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: '업체 회원가입' })
   @ApiResponse({ status: 201, description: '업체 가입 성공 (승인 대기)' })
   @ApiResponse({ status: 409, description: '이미 등록된 이메일 또는 사업자등록번호' })
@@ -44,6 +47,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '로그인' })
   @ApiResponse({ status: 200, description: '로그인 성공' })
@@ -73,6 +77,7 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '비밀번호 찾기 (재설정 이메일 발송)' })
   @ApiResponse({ status: 200, description: '이메일 발송 완료 (항상 동일 응답)' })

@@ -14,6 +14,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { EstimateService } from './estimate.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -65,6 +66,7 @@ export class EstimateController {
   }
 
   @Post('requests/:id/submit')
+  @Throttle({ default: { ttl: 3600000, limit: 10 } })
   @UseGuards(RolesGuard)
   @Roles('COMPANY')
   @ApiOperation({ summary: '견적 제출 (포인트 차감)' })

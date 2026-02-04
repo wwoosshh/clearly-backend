@@ -78,6 +78,74 @@ export class AdminCronService {
   }
 
   /**
+   * 7일 이상 OPEN 상태인 견적 요청 자동 만료
+   * 매일 자정 실행
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async handleExpiredEstimateRequests() {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const result = await this.prisma.estimateRequest.updateMany({
+      where: {
+        status: 'OPEN',
+        createdAt: { lt: sevenDaysAgo },
+      },
+      data: { status: 'EXPIRED' },
+    });
+
+    if (result.count > 0) {
+      this.logger.log(
+        `견적 요청 자동 만료 처리: ${result.count}건`,
+      );
+    }
+  }
+
+  /**
+   * 만료된 RefreshToken 정리
+   * 매일 새벽 2시 실행
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_2AM)
+  async cleanupExpiredTokens() {
+    const result = await this.prisma.refreshToken.deleteMany({
+      where: {
+        expiresAt: { lt: new Date() },
+      },
+    });
+
+    if (result.count > 0) {
+      this.logger.log(`만료 토큰 정리: ${result.count}건 삭제`);
+    }
+  }
+
+  /**
+   * 업체 완료 보고 후 48시간 미확인 시 자동 완료 처리
+   * 매일 새벽 1시 실행
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_1AM)
+  async handleAutoCompletion() {
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+
+    const result = await this.prisma.matching.updateMany({
+      where: {
+        status: 'ACCEPTED',
+        completionReportedAt: { not: null, lt: twoDaysAgo },
+      },
+      data: {
+        status: 'COMPLETED',
+        completedAt: new Date(),
+      },
+    });
+
+    if (result.count > 0) {
+      this.logger.log(
+        `자동 완료 처리: ${result.count}건 (48시간 미확인)`,
+      );
+    }
+  }
+
+  /**
    * 탈퇴 요청 후 7일 경과한 사용자 데이터 완전 삭제
    * 매일 새벽 3시 실행
    */

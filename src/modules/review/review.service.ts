@@ -55,6 +55,10 @@ export class ReviewService {
         userId,
         companyId: matching.companyId,
         rating: dto.rating,
+        qualityRating: dto.qualityRating,
+        priceRating: dto.priceRating,
+        punctualityRating: dto.punctualityRating,
+        kindnessRating: dto.kindnessRating,
         content: dto.content,
         images: dto.images,
       },
@@ -288,6 +292,50 @@ export class ReviewService {
     }
 
     return updated;
+  }
+
+  /** 업체 답글 작성 */
+  async addCompanyReply(reviewId: string, userId: string, reply: string) {
+    const review = await this.prisma.review.findUnique({
+      where: { id: reviewId },
+      include: { company: { select: { userId: true } } },
+    });
+
+    if (!review) {
+      throw new NotFoundException('리뷰를 찾을 수 없습니다.');
+    }
+
+    if (review.company.userId !== userId) {
+      throw new ForbiddenException('본인 업체의 리뷰에만 답글을 작성할 수 있습니다.');
+    }
+
+    if (review.companyReply) {
+      throw new BadRequestException('이미 답글이 작성된 리뷰입니다.');
+    }
+
+    return this.prisma.review.update({
+      where: { id: reviewId },
+      data: {
+        companyReply: reply,
+        companyRepliedAt: new Date(),
+      },
+    });
+  }
+
+  /** 도움이 됐어요 투표 */
+  async markHelpful(reviewId: string) {
+    const review = await this.prisma.review.findUnique({
+      where: { id: reviewId },
+    });
+
+    if (!review) {
+      throw new NotFoundException('리뷰를 찾을 수 없습니다.');
+    }
+
+    return this.prisma.review.update({
+      where: { id: reviewId },
+      data: { helpfulCount: { increment: 1 } },
+    });
   }
 
   /** 리뷰 삭제 */
