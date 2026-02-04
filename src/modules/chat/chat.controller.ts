@@ -15,6 +15,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { ChatService } from './chat.service';
+import { ChatGateway } from './chat.gateway';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -23,7 +24,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly chatGateway: ChatGateway,
+  ) {}
 
   @Post('rooms')
   @ApiOperation({ summary: '채팅방 생성' })
@@ -83,7 +87,18 @@ export class ChatController {
     @Param('id') roomId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.chatService.markAsRead(roomId, userId);
+    const result = await this.chatService.markAsRead(roomId, userId);
+
+    // REST 호출 시에도 WebSocket으로 읽음 알림 전송
+    if (result.count > 0) {
+      this.chatGateway.server.to(roomId).emit('messageRead', {
+        roomId,
+        readBy: userId,
+        count: result.count,
+      });
+    }
+
+    return result;
   }
 
   @Patch('rooms/:id/complete')
