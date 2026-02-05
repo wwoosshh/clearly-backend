@@ -1,3 +1,7 @@
+[build]
+builder = "nixpacks"
+buildCommand = "npm install --include=dev && npx prisma generate && npx nest build"
+
 [deploy]
 startCommand = "node dist/main.js"
 healthcheckPath = "/api/health"
