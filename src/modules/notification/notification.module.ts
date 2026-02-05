@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { NotificationService } from './notification.service';
 import { NotificationGateway } from './notification.gateway';
 import { NotificationController } from './notification.controller';
+import { FcmService } from './fcm.service';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { NotificationController } from './notification.controller';
     }),
   ],
   controllers: [NotificationController],
-  providers: [NotificationGateway, NotificationService],
-  exports: [NotificationService, NotificationGateway],
+  providers: [NotificationGateway, NotificationService, FcmService],
+  exports: [NotificationService, NotificationGateway, FcmService],
 })
 export class NotificationModule {}

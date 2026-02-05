@@ -22,6 +22,10 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CreateEstimateRequestDto } from './dto/create-estimate-request.dto';
 import { SubmitEstimateDto } from './dto/submit-estimate.dto';
+import {
+  getChecklistTemplate,
+  getAllChecklistTemplates,
+} from './cleaning-checklist';
 
 @ApiTags('견적')
 @Controller('estimates')
@@ -29,6 +33,24 @@ import { SubmitEstimateDto } from './dto/submit-estimate.dto';
 @ApiBearerAuth()
 export class EstimateController {
   constructor(private readonly estimateService: EstimateService) {}
+
+  @Get('checklist-templates')
+  @ApiOperation({ summary: '청소 유형별 체크리스트 템플릿 전체 조회' })
+  @ApiResponse({ status: 200, description: '체크리스트 템플릿 목록' })
+  getChecklistTemplates() {
+    return getAllChecklistTemplates();
+  }
+
+  @Get('checklist-templates/:cleaningType')
+  @ApiOperation({ summary: '특정 청소 유형의 체크리스트 템플릿 조회' })
+  @ApiResponse({ status: 200, description: '체크리스트 템플릿' })
+  getChecklistTemplate(@Param('cleaningType') cleaningType: string) {
+    const template = getChecklistTemplate(cleaningType);
+    if (!template) {
+      return { message: '해당 청소 유형의 체크리스트가 없습니다.' };
+    }
+    return template;
+  }
 
   @Post('requests')
   @UseGuards(RolesGuard)

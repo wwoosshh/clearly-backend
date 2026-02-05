@@ -63,4 +63,11 @@ export class CreateEstimateRequestDto {
   @IsString({ each: true })
   @ArrayMaxSize(10, { message: '이미지는 최대 10개까지 첨부할 수 있습니다.' })
   images?: string[];
+
+  @ApiPropertyOptional({
+    description: '체크리스트 선택 항목 (key: boolean 형태)',
+    example: { floor: true, window: true, bathroom: true, aircon: false },
+  })
+  @IsOptional()
+  checklist?: Record<string, boolean>;
 }

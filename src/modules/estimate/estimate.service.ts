@@ -75,6 +75,7 @@ export class EstimateService {
         message: dto.message,
         budget: dto.budget,
         images: dto.images,
+        checklist: dto.checklist ?? undefined,
       },
       include: {
         user: { select: { id: true, name: true } },

@@ -143,6 +143,12 @@ enum InquiryStatus {
   CLOSED
 }
 
+enum DevicePlatform {
+  ANDROID
+  IOS
+  WEB
+}
+
 // ==================
 // Models
 // ==================
@@ -174,6 +180,7 @@ model User {
   refreshTokens       RefreshToken[]
   estimateRequests    EstimateRequest[]
   inquiries           Inquiry[]
+  deviceTokens        DeviceToken[]
 
   @@unique([oauthProvider, oauthId])
   @@index([email])
@@ -461,6 +468,7 @@ model EstimateRequest {
   message       String                @db.Text
   budget        Int?
   images        Json?
+  checklist     Json?
   maxEstimates  Int                   @default(5) @map("max_estimates")
   status        EstimateRequestStatus @default(OPEN)
   createdAt     DateTime              @default(now()) @map("created_at")
@@ -563,4 +571,19 @@ model Inquiry {
   @@index([status, createdAt(sort: Desc)])
   @@index([userId])
   @@map("inquiries")
+}
+
+model DeviceToken {
+  id        String         @id @default(uuid())
+  userId    String         @map("user_id")
+  token     String         @unique
+  platform  DevicePlatform
+  isActive  Boolean        @default(true) @map("is_active")
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@map("device_tokens")
 }

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationGateway } from './notification.gateway';
+import { FcmService } from './fcm.service';
 import {
   NOTIFICATION_EVENTS,
   NotificationEvent,
@@ -16,6 +17,7 @@ export class NotificationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: NotificationGateway,
+    private readonly fcmService: FcmService,
   ) {}
 
   async create(
@@ -30,6 +32,22 @@ export class NotificationService {
     });
 
     this.gateway.sendToUser(userId, 'newNotification', notification);
+
+    // FCM 푸시 알림 (비동기, 실패해도 무시)
+    this.fcmService
+      .sendToUser(userId, title, content || '', {
+        type,
+        notificationId: notification.id,
+        ...(data
+          ? Object.fromEntries(
+              Object.entries(data).map(([k, v]) => [k, String(v)]),
+            )
+          : {}),
+      })
+      .catch((err) =>
+        this.logger.warn(`FCM 전송 실패 (무시): userId=${userId}, ${err}`),
+      );
+
     this.logger.log(`알림 생성: userId=${userId}, type=${type}`);
 
     return notification;

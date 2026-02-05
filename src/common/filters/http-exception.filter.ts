@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import * as Sentry from '@sentry/nestjs';
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -39,6 +40,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     } else {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       message = '서버 내부 오류가 발생했습니다.';
+      Sentry.captureException(exception);
       this.logger.error(
         `예상치 못한 오류 발생: ${exception}`,
         exception instanceof Error ? exception.stack : undefined,
