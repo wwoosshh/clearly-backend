@@ -160,6 +160,50 @@ export class ChatService {
     return message;
   }
 
+  /** 채팅방 단건 조회 */
+  async getRoomById(roomId: string, userId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { userId },
+    });
+
+    const room = await this.prisma.chatRoom.findUnique({
+      where: { id: roomId },
+      include: {
+        user: {
+          select: { id: true, name: true, profileImage: true },
+        },
+        company: {
+          select: {
+            id: true,
+            businessName: true,
+            user: {
+              select: { id: true, name: true, profileImage: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!room) {
+      throw new NotFoundException('채팅방을 찾을 수 없습니다.');
+    }
+
+    if (room.userId !== userId && room.company.user.id !== userId) {
+      throw new ForbiddenException('이 채팅방에 접근할 수 없습니다.');
+    }
+
+    // 안 읽은 메시지 수 계산
+    const unreadCount = await this.prisma.chatMessage.count({
+      where: {
+        roomId: room.id,
+        isRead: false,
+        senderId: { not: company ? company.userId : userId },
+      },
+    });
+
+    return { ...room, unreadCount };
+  }
+
   /** 채팅방 메시지 목록 조회 */
   async getMessages(roomId: string, userId: string, page = 1, limit = 50) {
     const room = await this.prisma.chatRoom.findUnique({

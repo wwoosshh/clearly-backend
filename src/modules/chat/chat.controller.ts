@@ -46,6 +46,16 @@ export class ChatController {
     return this.chatService.getUserRooms(userId);
   }
 
+  @Get('rooms/:id')
+  @ApiOperation({ summary: '채팅방 상세 조회' })
+  @ApiResponse({ status: 200, description: '채팅방 상세 조회 성공' })
+  async getRoomById(
+    @Param('id') roomId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.chatService.getRoomById(roomId, userId);
+  }
+
   @Get('rooms/:id/messages')
   @ApiOperation({ summary: '메시지 목록 조회' })
   @ApiResponse({ status: 200, description: '메시지 목록 조회 성공' })
