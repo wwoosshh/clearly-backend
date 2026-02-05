@@ -34,6 +34,8 @@ import {
 export class EstimateController {
   constructor(private readonly estimateService: EstimateService) {}
 
+  // ─── 정적 라우트 (동적 :id 보다 먼저 선언해야 함) ───
+
   @Get('checklist-templates')
   @ApiOperation({ summary: '청소 유형별 체크리스트 템플릿 전체 조회' })
   @ApiResponse({ status: 200, description: '체크리스트 템플릿 목록' })
@@ -114,6 +116,25 @@ export class EstimateController {
     return this.estimateService.getMyEstimates(userId, page || 1, limit || 10);
   }
 
+  @Get('company-estimates')
+  @UseGuards(RolesGuard)
+  @Roles('COMPANY')
+  @ApiOperation({ summary: '업체가 제출한 견적 목록' })
+  @ApiResponse({ status: 200, description: '제출 견적 목록 조회 성공' })
+  async getCompanyEstimates(
+    @CurrentUser('id') userId: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.estimateService.getCompanyEstimates(
+      userId,
+      page || 1,
+      limit || 10,
+    );
+  }
+
+  // ─── 동적 :id 라우트 (정적 라우트 뒤에 선언) ───
+
   @Get(':id')
   @ApiOperation({ summary: '견적 단건 조회' })
   @ApiResponse({ status: 200, description: '견적 상세 조회 성공' })
@@ -146,22 +167,5 @@ export class EstimateController {
     @Param('id') estimateId: string,
   ) {
     return this.estimateService.rejectEstimate(userId, estimateId);
-  }
-
-  @Get('company-estimates')
-  @UseGuards(RolesGuard)
-  @Roles('COMPANY')
-  @ApiOperation({ summary: '업체가 제출한 견적 목록' })
-  @ApiResponse({ status: 200, description: '제출 견적 목록 조회 성공' })
-  async getCompanyEstimates(
-    @CurrentUser('id') userId: string,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
-  ) {
-    return this.estimateService.getCompanyEstimates(
-      userId,
-      page || 1,
-      limit || 10,
-    );
   }
 }
