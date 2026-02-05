@@ -114,6 +114,16 @@ export class EstimateController {
     return this.estimateService.getMyEstimates(userId, page || 1, limit || 10);
   }
 
+  @Get(':id')
+  @ApiOperation({ summary: '견적 단건 조회' })
+  @ApiResponse({ status: 200, description: '견적 상세 조회 성공' })
+  async getEstimateById(
+    @CurrentUser('id') userId: string,
+    @Param('id') estimateId: string,
+  ) {
+    return this.estimateService.getEstimateById(estimateId, userId);
+  }
+
   @Patch(':id/accept')
   @UseGuards(RolesGuard)
   @Roles('USER')

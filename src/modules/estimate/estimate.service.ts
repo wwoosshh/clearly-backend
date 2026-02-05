@@ -377,6 +377,34 @@ export class EstimateService {
     };
   }
 
+  /** 견적 단건 조회 */
+  async getEstimateById(estimateId: string, userId: string) {
+    const estimate = await this.prisma.estimate.findUnique({
+      where: { id: estimateId },
+      include: {
+        company: {
+          include: {
+            user: { select: { id: true, name: true } },
+          },
+        },
+        estimateRequest: true,
+      },
+    });
+
+    if (!estimate) {
+      throw new NotFoundException('견적을 찾을 수 없습니다.');
+    }
+
+    // 본인의 견적요청에 대한 견적이거나, 해당 업체의 견적인지 확인
+    const isRequestOwner = estimate.estimateRequest.userId === userId;
+    const isCompanyOwner = estimate.company.user.id === userId;
+    if (!isRequestOwner && !isCompanyOwner) {
+      throw new ForbiddenException('해당 견적을 조회할 권한이 없습니다.');
+    }
+
+    return estimate;
+  }
+
   /** 견적 수락 → Matching + ChatRoom 생성 (USER) */
   async acceptEstimate(userId: string, estimateId: string) {
     const estimate = await this.prisma.estimate.findUnique({
