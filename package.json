@@ -36,7 +36,6 @@
     "@nestjs/websockets": "^11.1.12",
     "@prisma/client": "^6.19.2",
     "@sentry/nestjs": "^10.38.0",
-    "@sentry/profiling-node": "^10.38.0",
     "@supabase/supabase-js": "^2.93.3",
     "axios": "^1.13.4",
     "bcrypt": "^5.1.1",
