@@ -93,10 +93,7 @@ export class InquiryController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '문의 답변 작성' })
   @ApiResponse({ status: 200, description: '문의 답변 작성 성공' })
-  async answerInquiry(
-    @Param('id') id: string,
-    @Body() dto: AnswerInquiryDto,
-  ) {
+  async answerInquiry(@Param('id') id: string, @Body() dto: AnswerInquiryDto) {
     return this.inquiryService.answerInquiry(id, dto);
   }
 

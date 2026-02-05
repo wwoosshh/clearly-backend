@@ -78,7 +78,11 @@ export class MatchingController {
     @Param('id') matchingId: string,
     @Body() body: { images: string[] },
   ) {
-    return this.matchingService.reportCompletion(userId, matchingId, body.images);
+    return this.matchingService.reportCompletion(
+      userId,
+      matchingId,
+      body.images,
+    );
   }
 
   @Patch('requests/:id/confirm-completion')

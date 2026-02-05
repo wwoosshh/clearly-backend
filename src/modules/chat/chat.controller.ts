@@ -55,12 +55,7 @@ export class ChatController {
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
-    return this.chatService.getMessages(
-      roomId,
-      userId,
-      page || 1,
-      limit || 50,
-    );
+    return this.chatService.getMessages(roomId, userId, page || 1, limit || 50);
   }
 
   @Post('rooms/:id/messages')

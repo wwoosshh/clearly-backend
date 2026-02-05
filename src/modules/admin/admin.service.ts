@@ -1,10 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PointService } from '../point/point.service';
-import {
-  ResolveReportDto,
-  ReportActionType,
-} from './dto/resolve-report.dto';
+import { ResolveReportDto, ReportActionType } from './dto/resolve-report.dto';
 
 const WELCOME_POINT_AMOUNT = 500; // 신규 업체 승인 시 무료 지급 포인트
 
@@ -125,14 +122,10 @@ export class AdminService {
     const companyId = user.company?.id;
 
     // 매칭: 일반 유저는 userId, 업체는 companyId로 조회
-    const matchingWhere = isCompany
-      ? { companyId }
-      : { userId };
+    const matchingWhere = isCompany ? { companyId } : { userId };
 
     // 리뷰: 일반 유저는 userId(작성자), 업체는 companyId(대상)
-    const reviewWhere = isCompany
-      ? { companyId }
-      : { userId };
+    const reviewWhere = isCompany ? { companyId } : { userId };
 
     // 신고: 본인이 신고하거나 신고당한 것 (업체일 경우 companyId도 포함)
     const reportOrConditions: any[] = [

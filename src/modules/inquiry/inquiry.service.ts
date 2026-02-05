@@ -77,11 +77,7 @@ export class InquiryService {
 
   // ─── 관리자 ───────────────────────────────────────────
 
-  async getAdminInquiries(
-    page: number,
-    limit: number,
-    status?: string,
-  ) {
+  async getAdminInquiries(page: number, limit: number, status?: string) {
     const skip = (page - 1) * limit;
 
     const where: any = {};

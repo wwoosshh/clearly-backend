@@ -123,7 +123,9 @@ export class EstimateService {
           requestRegionTokens.some((token) => area.includes(token)),
         ) ||
         (company.address &&
-          requestRegionTokens.some((token) => company.address!.includes(token)));
+          requestRegionTokens.some((token) =>
+            company.address!.includes(token),
+          ));
 
       return hasSpecialty && hasRegion;
     });
@@ -369,7 +371,9 @@ export class EstimateService {
     }
 
     if (estimate.estimateRequest.userId !== userId) {
-      throw new ForbiddenException('본인의 견적요청에 대한 견적만 수락할 수 있습니다.');
+      throw new ForbiddenException(
+        '본인의 견적요청에 대한 견적만 수락할 수 있습니다.',
+      );
     }
 
     if (estimate.status !== 'SUBMITTED') {

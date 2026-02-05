@@ -23,21 +23,33 @@ export class CreateReviewDto {
   @Max(5)
   rating: number;
 
-  @ApiPropertyOptional({ description: '청소 품질 (1~5)', minimum: 1, maximum: 5 })
+  @ApiPropertyOptional({
+    description: '청소 품질 (1~5)',
+    minimum: 1,
+    maximum: 5,
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
   @Max(5)
   qualityRating?: number;
 
-  @ApiPropertyOptional({ description: '가격 만족도 (1~5)', minimum: 1, maximum: 5 })
+  @ApiPropertyOptional({
+    description: '가격 만족도 (1~5)',
+    minimum: 1,
+    maximum: 5,
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
   @Max(5)
   priceRating?: number;
 
-  @ApiPropertyOptional({ description: '시간 준수 (1~5)', minimum: 1, maximum: 5 })
+  @ApiPropertyOptional({
+    description: '시간 준수 (1~5)',
+    minimum: 1,
+    maximum: 5,
+  })
   @IsOptional()
   @IsInt()
   @Min(1)

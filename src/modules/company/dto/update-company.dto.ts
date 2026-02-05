@@ -27,7 +27,10 @@ export class UpdateCompanyDto {
   @MaxLength(50, { message: '대표자명은 최대 50자까지 가능합니다.' })
   representative?: string;
 
-  @ApiPropertyOptional({ description: '주소', example: '서울특별시 강남구 역삼동' })
+  @ApiPropertyOptional({
+    description: '주소',
+    example: '서울특별시 강남구 역삼동',
+  })
   @IsString({ message: '주소는 문자열이어야 합니다.' })
   @IsOptional()
   @MaxLength(300, { message: '주소는 최대 300자까지 가능합니다.' })
@@ -44,11 +47,16 @@ export class UpdateCompanyDto {
   @IsOptional()
   description?: string;
 
-  @ApiPropertyOptional({ description: '업체 프로필 이미지 URL 배열', type: [String] })
+  @ApiPropertyOptional({
+    description: '업체 프로필 이미지 URL 배열',
+    type: [String],
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  @ArrayMaxSize(10, { message: '프로필 이미지는 최대 10개까지 등록할 수 있습니다.' })
+  @ArrayMaxSize(10, {
+    message: '프로필 이미지는 최대 10개까지 등록할 수 있습니다.',
+  })
   profileImages?: string[];
 
   @ApiPropertyOptional({ description: '서비스 지역', type: [String] })
@@ -85,7 +93,10 @@ export class UpdateCompanyDto {
 
   // ── 신규 필드 ──
 
-  @ApiPropertyOptional({ description: '연락가능시간', example: '09:00 - 18:00' })
+  @ApiPropertyOptional({
+    description: '연락가능시간',
+    example: '09:00 - 18:00',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(200)
@@ -128,7 +139,9 @@ export class UpdateCompanyDto {
   @IsString()
   serviceDetail?: string;
 
-  @ApiPropertyOptional({ description: '포트폴리오 [{title, description, images}]' })
+  @ApiPropertyOptional({
+    description: '포트폴리오 [{title, description, images}]',
+  })
   @IsOptional()
   @IsArray()
   @Transform(({ value }) => value)

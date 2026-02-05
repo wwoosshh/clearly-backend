@@ -131,10 +131,7 @@ export class CompanyService {
     }
 
     // 주소가 변경된 경우 위도/경도 재계산
-    if (
-      updateData.address &&
-      updateData.address !== company.address
-    ) {
+    if (updateData.address && updateData.address !== company.address) {
       try {
         const coords = await this.geocodingService.geocodeAddress(
           updateData.address,
@@ -297,9 +294,7 @@ export class CompanyService {
 
         // 점수 계산
         const ratingScore = this.calcRatingScore(
-          company.averageRating != null
-            ? Number(company.averageRating)
-            : null,
+          company.averageRating != null ? Number(company.averageRating) : null,
         );
         const responseScore = this.calcResponseTimeScore(company.responseTime);
         const matchingScore = this.calcMatchingScore(company.totalMatchings);
@@ -359,8 +354,7 @@ export class CompanyService {
           contactHours: company.contactHours,
           employeeCount: company.employeeCount,
           isNew: boostScore > 0,
-          distance:
-            distance != null ? Math.round(distance * 10) / 10 : null,
+          distance: distance != null ? Math.round(distance * 10) / 10 : null,
           score: Math.round(totalScore * 10) / 10,
           baseScore: Math.round(baseScore * 10) / 10,
           user: company.user,
@@ -399,9 +393,7 @@ export class CompanyService {
         limit,
         totalPages,
       },
-      searchLocation: hasSearchLocation
-        ? { latitude, longitude }
-        : null,
+      searchLocation: hasSearchLocation ? { latitude, longitude } : null,
     };
   }
 
@@ -410,7 +402,8 @@ export class CompanyService {
     switch (sortBy) {
       case SortBy.RATING:
         companies.sort(
-          (a, b) => (Number(b.averageRating) || 0) - (Number(a.averageRating) || 0),
+          (a, b) =>
+            (Number(b.averageRating) || 0) - (Number(a.averageRating) || 0),
         );
         break;
       case SortBy.REVIEWS:
@@ -427,9 +420,7 @@ export class CompanyService {
         );
         break;
       case SortBy.PRICE_HIGH:
-        companies.sort(
-          (a, b) => (b.maxPrice ?? 0) - (a.maxPrice ?? 0),
-        );
+        companies.sort((a, b) => (b.maxPrice ?? 0) - (a.maxPrice ?? 0));
         break;
       case SortBy.SCORE:
       default:
@@ -486,7 +477,10 @@ export class CompanyService {
   /** 매칭실적 점수: log 스케일, 0=0, 1000+=100 */
   private calcMatchingScore(totalMatchings: number | null): number {
     if (!totalMatchings) return 0;
-    return Math.min(100, (Math.log10(totalMatchings + 1) / Math.log10(1001)) * 100);
+    return Math.min(
+      100,
+      (Math.log10(totalMatchings + 1) / Math.log10(1001)) * 100,
+    );
   }
 
   /** 구독등급 점수: priorityWeight 기반, 3.0=100 */
@@ -517,21 +511,42 @@ export class CompanyService {
     const total = 16;
 
     if (company.description) filled++;
-    if (Array.isArray(company.specialties) && (company.specialties as any[]).length > 0) filled++;
-    if (Array.isArray(company.serviceAreas) && (company.serviceAreas as any[]).length > 0) filled++;
+    if (
+      Array.isArray(company.specialties) &&
+      (company.specialties as any[]).length > 0
+    )
+      filled++;
+    if (
+      Array.isArray(company.serviceAreas) &&
+      (company.serviceAreas as any[]).length > 0
+    )
+      filled++;
     if (company.minPrice != null || company.maxPrice != null) filled++;
-    if (Array.isArray(company.profileImages) && (company.profileImages as any[]).length > 0) filled++;
-    if (Array.isArray(company.certificates) && (company.certificates as any[]).length > 0) filled++;
+    if (
+      Array.isArray(company.profileImages) &&
+      (company.profileImages as any[]).length > 0
+    )
+      filled++;
+    if (
+      Array.isArray(company.certificates) &&
+      (company.certificates as any[]).length > 0
+    )
+      filled++;
     if (company.address) filled++;
     if (company.contactHours) filled++;
     if (company.employeeCount != null) filled++;
     if (company.companyUrl) filled++;
     if (company.experienceYears != null) filled++;
     if (company.serviceDetail) filled++;
-    if (Array.isArray(company.portfolio) && (company.portfolio as any[]).length > 0) filled++;
+    if (
+      Array.isArray(company.portfolio) &&
+      (company.portfolio as any[]).length > 0
+    )
+      filled++;
     if (company.contactEmail) filled++;
     if (company.identityVerified) filled++;
-    if (Array.isArray(company.videos) && (company.videos as any[]).length > 0) filled++;
+    if (Array.isArray(company.videos) && (company.videos as any[]).length > 0)
+      filled++;
 
     return (filled / total) * 100;
   }

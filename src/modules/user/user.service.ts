@@ -107,7 +107,9 @@ export class UserService {
       });
     });
 
-    return { message: '회원탈퇴 요청이 처리되었습니다. 7일 후 데이터가 삭제됩니다.' };
+    return {
+      message: '회원탈퇴 요청이 처리되었습니다. 7일 후 데이터가 삭제됩니다.',
+    };
   }
 
   async deactivate(id: string) {

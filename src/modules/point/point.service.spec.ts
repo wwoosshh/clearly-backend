@@ -122,9 +122,9 @@ describe('PointService', () => {
     });
 
     it('충전 금액 0 이하 시 BadRequestException', async () => {
-      await expect(
-        service.chargePoints('company-uuid-1', 0),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.chargePoints('company-uuid-1', 0)).rejects.toThrow(
+        BadRequestException,
+      );
 
       await expect(
         service.chargePoints('company-uuid-1', -100),

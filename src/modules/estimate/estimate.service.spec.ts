@@ -256,11 +256,7 @@ describe('EstimateService', () => {
       });
 
       await expect(
-        service.submitEstimate(
-          mockCompany.userId,
-          mockEstimateRequest.id,
-          dto,
-        ),
+        service.submitEstimate(mockCompany.userId, mockEstimateRequest.id, dto),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -270,11 +266,7 @@ describe('EstimateService', () => {
       prisma.estimate.findFirst.mockResolvedValue(mockEstimate);
 
       await expect(
-        service.submitEstimate(
-          mockCompany.userId,
-          mockEstimateRequest.id,
-          dto,
-        ),
+        service.submitEstimate(mockCompany.userId, mockEstimateRequest.id, dto),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -285,11 +277,7 @@ describe('EstimateService', () => {
       prisma.estimate.count.mockResolvedValue(5);
 
       await expect(
-        service.submitEstimate(
-          mockCompany.userId,
-          mockEstimateRequest.id,
-          dto,
-        ),
+        service.submitEstimate(mockCompany.userId, mockEstimateRequest.id, dto),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -300,12 +288,16 @@ describe('EstimateService', () => {
 
       const txMock = {
         estimate: {
-          update: jest.fn().mockResolvedValue({ ...mockEstimate, status: 'ACCEPTED' }),
+          update: jest
+            .fn()
+            .mockResolvedValue({ ...mockEstimate, status: 'ACCEPTED' }),
           findMany: jest.fn().mockResolvedValue([]),
           updateMany: jest.fn(),
         },
         estimateRequest: {
-          update: jest.fn().mockResolvedValue({ ...mockEstimateRequest, status: 'CLOSED' }),
+          update: jest
+            .fn()
+            .mockResolvedValue({ ...mockEstimateRequest, status: 'CLOSED' }),
         },
         matching: {
           create: jest.fn().mockResolvedValue({ id: 'matching-uuid-1' }),
@@ -317,7 +309,10 @@ describe('EstimateService', () => {
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
 
-      const result = await service.acceptEstimate('user-uuid-1', mockEstimate.id);
+      const result = await service.acceptEstimate(
+        'user-uuid-1',
+        mockEstimate.id,
+      );
 
       expect(result.matching.id).toBe('matching-uuid-1');
       expect(result.chatRoom.id).toBe('chatroom-uuid-1');
@@ -338,12 +333,16 @@ describe('EstimateService', () => {
 
       const txMock = {
         estimate: {
-          update: jest.fn().mockResolvedValue({ ...mockEstimate, status: 'ACCEPTED' }),
+          update: jest
+            .fn()
+            .mockResolvedValue({ ...mockEstimate, status: 'ACCEPTED' }),
           findMany: jest.fn().mockResolvedValue(otherEstimates),
           updateMany: jest.fn().mockResolvedValue({ count: 2 }),
         },
         estimateRequest: {
-          update: jest.fn().mockResolvedValue({ ...mockEstimateRequest, status: 'CLOSED' }),
+          update: jest
+            .fn()
+            .mockResolvedValue({ ...mockEstimateRequest, status: 'CLOSED' }),
         },
         matching: {
           create: jest.fn().mockResolvedValue({ id: 'matching-uuid-1' }),
@@ -405,14 +404,21 @@ describe('EstimateService', () => {
     it('견적 거부 성공', async () => {
       prisma.estimate.findUnique.mockResolvedValue({
         ...mockEstimate,
-        company: { id: mockCompany.id, userId: mockCompany.userId, businessName: mockCompany.businessName },
+        company: {
+          id: mockCompany.id,
+          userId: mockCompany.userId,
+          businessName: mockCompany.businessName,
+        },
       });
       prisma.estimate.update.mockResolvedValue({
         ...mockEstimate,
         status: 'REJECTED',
       });
 
-      const result = await service.rejectEstimate('user-uuid-1', mockEstimate.id);
+      const result = await service.rejectEstimate(
+        'user-uuid-1',
+        mockEstimate.id,
+      );
 
       expect(result.status).toBe('REJECTED');
       expect(eventEmitter.emit).toHaveBeenCalledWith(
@@ -432,7 +438,11 @@ describe('EstimateService', () => {
     it('본인 견적요청이 아닌 경우 ForbiddenException', async () => {
       prisma.estimate.findUnique.mockResolvedValue({
         ...mockEstimate,
-        company: { id: mockCompany.id, userId: mockCompany.userId, businessName: mockCompany.businessName },
+        company: {
+          id: mockCompany.id,
+          userId: mockCompany.userId,
+          businessName: mockCompany.businessName,
+        },
       });
 
       await expect(
@@ -444,7 +454,11 @@ describe('EstimateService', () => {
       prisma.estimate.findUnique.mockResolvedValue({
         ...mockEstimate,
         status: 'ACCEPTED',
-        company: { id: mockCompany.id, userId: mockCompany.userId, businessName: mockCompany.businessName },
+        company: {
+          id: mockCompany.id,
+          userId: mockCompany.userId,
+          businessName: mockCompany.businessName,
+        },
       });
 
       await expect(
@@ -473,7 +487,10 @@ describe('EstimateService', () => {
       prisma.estimateRequest.findMany.mockResolvedValue([mockEstimateRequest]);
       prisma.estimateRequest.count.mockResolvedValue(1);
 
-      const result = await service.getEstimateRequests('company-user-uuid-1', 'COMPANY');
+      const result = await service.getEstimateRequests(
+        'company-user-uuid-1',
+        'COMPANY',
+      );
 
       expect(prisma.estimateRequest.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -491,7 +508,9 @@ describe('EstimateService', () => {
         estimates: [],
       });
 
-      const result = await service.getEstimateRequestById(mockEstimateRequest.id);
+      const result = await service.getEstimateRequestById(
+        mockEstimateRequest.id,
+      );
       expect(result.id).toBe(mockEstimateRequest.id);
     });
 
@@ -519,9 +538,9 @@ describe('EstimateService', () => {
     it('업체 정보 없으면 NotFoundException', async () => {
       prisma.company.findUnique.mockResolvedValue(null);
 
-      await expect(
-        service.getCompanyEstimates('unknown-user'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.getCompanyEstimates('unknown-user')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

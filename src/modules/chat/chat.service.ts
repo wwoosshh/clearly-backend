@@ -90,11 +90,7 @@ export class ChatService {
     }
 
     // 양측 거래취소 시 시스템 메시지만 허용
-    if (
-      room.userDeclined &&
-      room.companyDeclined &&
-      messageType !== 'SYSTEM'
-    ) {
+    if (room.userDeclined && room.companyDeclined && messageType !== 'SYSTEM') {
       throw new BadRequestException(
         '거래가 취소된 채팅방에서는 메시지를 보낼 수 없습니다.',
       );
@@ -156,9 +152,7 @@ export class ChatService {
             room.companyId,
             senderId,
             room.createdAt,
-          ).catch((err) =>
-            this.logger.error(`응답시간 업데이트 실패: ${err}`),
-          );
+          ).catch((err) => this.logger.error(`응답시간 업데이트 실패: ${err}`));
         }
       }
     }
@@ -214,9 +208,7 @@ export class ChatService {
       where: { userId },
     });
 
-    const whereClause = company
-      ? { companyId: company.id }
-      : { userId };
+    const whereClause = company ? { companyId: company.id } : { userId };
 
     const rooms = await this.prisma.chatRoom.findMany({
       where: {
@@ -253,9 +245,7 @@ export class ChatService {
             isRead: false,
             senderId: { not: userId },
             // 업체 유저인 경우 company의 userId로 필터링
-            ...(company
-              ? { senderId: { not: company.userId } }
-              : {}),
+            ...(company ? { senderId: { not: company.userId } } : {}),
           },
         });
         return { ...room, unreadCount };
@@ -314,7 +304,9 @@ export class ChatService {
     }
 
     if (room.matching.status !== 'ACCEPTED') {
-      throw new BadRequestException('수락된 매칭만 거래완료 처리할 수 있습니다.');
+      throw new BadRequestException(
+        '수락된 매칭만 거래완료 처리할 수 있습니다.',
+      );
     }
 
     // 매칭 상태를 COMPLETED로 변경
@@ -334,9 +326,7 @@ export class ChatService {
       'SYSTEM',
     );
 
-    this.logger.log(
-      `거래완료: roomId=${roomId}, matchingId=${matching.id}`,
-    );
+    this.logger.log(`거래완료: roomId=${roomId}, matchingId=${matching.id}`);
 
     return {
       matchingId: matching.id,

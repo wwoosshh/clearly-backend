@@ -63,11 +63,7 @@ export class UploadService {
     return map[mimetype] || 'jpg';
   }
 
-  private buildPath(
-    category: string,
-    userId: string,
-    ext: string,
-  ): string {
+  private buildPath(category: string, userId: string, ext: string): string {
     const timestamp = Date.now();
     const id = uuidv4().slice(0, 8);
     return `${category}/${userId}/${id}_${timestamp}.${ext}`;
@@ -147,7 +143,9 @@ export class UploadService {
       throw new BadRequestException('파일이 제공되지 않았습니다.');
     }
     if (files.length > MAX_FILES) {
-      throw new BadRequestException(`최대 ${MAX_FILES}개의 파일만 업로드할 수 있습니다.`);
+      throw new BadRequestException(
+        `최대 ${MAX_FILES}개의 파일만 업로드할 수 있습니다.`,
+      );
     }
 
     const results: UploadResult[] = [];

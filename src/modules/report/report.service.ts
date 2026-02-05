@@ -35,17 +35,20 @@ export class ReportService {
       const target = await this.prisma.user.findUnique({
         where: { id: dto.targetId },
       });
-      if (!target) throw new NotFoundException('신고 대상 사용자를 찾을 수 없습니다.');
+      if (!target)
+        throw new NotFoundException('신고 대상 사용자를 찾을 수 없습니다.');
     } else if (dto.targetType === 'COMPANY') {
       const target = await this.prisma.company.findUnique({
         where: { id: dto.targetId },
       });
-      if (!target) throw new NotFoundException('신고 대상 업체를 찾을 수 없습니다.');
+      if (!target)
+        throw new NotFoundException('신고 대상 업체를 찾을 수 없습니다.');
     } else if (dto.targetType === 'REVIEW') {
       const target = await this.prisma.review.findUnique({
         where: { id: dto.targetId },
       });
-      if (!target) throw new NotFoundException('신고 대상 리뷰를 찾을 수 없습니다.');
+      if (!target)
+        throw new NotFoundException('신고 대상 리뷰를 찾을 수 없습니다.');
     }
 
     // 동일 대상 중복 신고 방지 (PENDING 상태인 것만)
@@ -58,7 +61,9 @@ export class ReportService {
       },
     });
     if (existing) {
-      throw new BadRequestException('이미 해당 대상에 대한 신고가 접수되어 있습니다.');
+      throw new BadRequestException(
+        '이미 해당 대상에 대한 신고가 접수되어 있습니다.',
+      );
     }
 
     const report = await this.prisma.report.create({

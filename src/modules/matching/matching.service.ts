@@ -53,7 +53,11 @@ export class MatchingService {
       include: {
         user: { select: { id: true, name: true, phone: true } },
         company: {
-          select: { id: true, businessName: true, user: { select: { id: true, name: true } } },
+          select: {
+            id: true,
+            businessName: true,
+            user: { select: { id: true, name: true } },
+          },
         },
       },
     });
@@ -87,7 +91,11 @@ export class MatchingService {
         include: {
           user: { select: { id: true, name: true, phone: true } },
           company: {
-            select: { id: true, businessName: true, user: { select: { id: true, name: true } } },
+            select: {
+              id: true,
+              businessName: true,
+              user: { select: { id: true, name: true } },
+            },
           },
         },
       }),
@@ -143,11 +151,7 @@ export class MatchingService {
   }
 
   /** 업체: 서비스 완료 보고 (완료 사진 업로드) */
-  async reportCompletion(
-    userId: string,
-    matchingId: string,
-    images: string[],
-  ) {
+  async reportCompletion(userId: string, matchingId: string, images: string[]) {
     const matching = await this.prisma.matching.findUnique({
       where: { id: matchingId },
       include: { company: { select: { userId: true } } },
@@ -157,10 +161,14 @@ export class MatchingService {
       throw new NotFoundException('매칭 정보를 찾을 수 없습니다.');
     }
     if (matching.company?.userId !== userId) {
-      throw new ForbiddenException('해당 매칭의 업체만 완료 보고할 수 있습니다.');
+      throw new ForbiddenException(
+        '해당 매칭의 업체만 완료 보고할 수 있습니다.',
+      );
     }
     if (matching.status !== 'ACCEPTED') {
-      throw new BadRequestException('수락 상태의 매칭만 완료 보고할 수 있습니다.');
+      throw new BadRequestException(
+        '수락 상태의 매칭만 완료 보고할 수 있습니다.',
+      );
     }
     if (!images || images.length === 0) {
       throw new BadRequestException('완료 사진을 1장 이상 업로드해주세요.');
@@ -207,7 +215,9 @@ export class MatchingService {
       throw new ForbiddenException('본인의 매칭만 완료 확인할 수 있습니다.');
     }
     if (matching.status !== 'ACCEPTED') {
-      throw new BadRequestException('수락 상태의 매칭만 완료 확인할 수 있습니다.');
+      throw new BadRequestException(
+        '수락 상태의 매칭만 완료 확인할 수 있습니다.',
+      );
     }
 
     const updated = await this.prisma.matching.update({
@@ -218,7 +228,9 @@ export class MatchingService {
       },
     });
 
-    this.logger.log(`서비스 완료 확인: matchingId=${matchingId}, userId=${userId}`);
+    this.logger.log(
+      `서비스 완료 확인: matchingId=${matchingId}, userId=${userId}`,
+    );
 
     // 업체에게 완료 알림
     if (matching.company) {
@@ -280,9 +292,7 @@ export class MatchingService {
     );
 
     // 상대방에게 취소 알림
-    const notifyUserId = isUser
-      ? matching.company?.userId
-      : matching.userId;
+    const notifyUserId = isUser ? matching.company?.userId : matching.userId;
 
     if (notifyUserId) {
       this.eventEmitter.emit(

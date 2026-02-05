@@ -63,7 +63,11 @@ export class UploadController {
       type: 'object',
       properties: {
         file: { type: 'string', format: 'binary' },
-        bucket: { type: 'string', description: '업로드 카테고리 (profiles, companies, chat, reviews, estimates)' },
+        bucket: {
+          type: 'string',
+          description:
+            '업로드 카테고리 (profiles, companies, chat, reviews, estimates)',
+        },
       },
     },
   })

@@ -69,11 +69,7 @@ export class PointService {
   }
 
   /** 포인트 충전 (관리자) */
-  async chargePoints(
-    companyId: string,
-    amount: number,
-    description?: string,
-  ) {
+  async chargePoints(companyId: string, amount: number, description?: string) {
     if (amount <= 0) {
       throw new BadRequestException('충전 금액은 0보다 커야 합니다.');
     }

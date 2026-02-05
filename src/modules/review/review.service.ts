@@ -34,11 +34,15 @@ export class ReviewService {
     }
 
     if (matching.userId !== userId) {
-      throw new ForbiddenException('본인의 매칭에 대해서만 리뷰를 작성할 수 있습니다.');
+      throw new ForbiddenException(
+        '본인의 매칭에 대해서만 리뷰를 작성할 수 있습니다.',
+      );
     }
 
     if (matching.status !== 'COMPLETED') {
-      throw new BadRequestException('완료된 거래에 대해서만 리뷰를 작성할 수 있습니다.');
+      throw new BadRequestException(
+        '완료된 거래에 대해서만 리뷰를 작성할 수 있습니다.',
+      );
     }
 
     if (matching.review) {
@@ -99,7 +103,7 @@ export class ReviewService {
 
     // 업체에게 새 리뷰 알림
     const companyWithUser = await this.prisma.company.findUnique({
-      where: { id: matching.companyId! },
+      where: { id: matching.companyId },
       select: { userId: true, id: true },
     });
     if (companyWithUser) {
@@ -110,7 +114,11 @@ export class ReviewService {
           'NEW_REVIEW',
           '새로운 리뷰가 등록되었습니다',
           `${dto.rating}점 리뷰가 등록되었습니다.`,
-          { reviewId: review.id, companyId: companyWithUser.id, rating: dto.rating },
+          {
+            reviewId: review.id,
+            companyId: companyWithUser.id,
+            rating: dto.rating,
+          },
         ),
       );
     }
@@ -254,7 +262,11 @@ export class ReviewService {
   }
 
   /** 리뷰 수정 */
-  async update(id: string, userId: string, data: { rating?: number; content?: string }) {
+  async update(
+    id: string,
+    userId: string,
+    data: { rating?: number; content?: string },
+  ) {
     const review = await this.prisma.review.findUnique({ where: { id } });
 
     if (!review) {
@@ -306,7 +318,9 @@ export class ReviewService {
     }
 
     if (review.company.userId !== userId) {
-      throw new ForbiddenException('본인 업체의 리뷰에만 답글을 작성할 수 있습니다.');
+      throw new ForbiddenException(
+        '본인 업체의 리뷰에만 답글을 작성할 수 있습니다.',
+      );
     }
 
     if (review.companyReply) {

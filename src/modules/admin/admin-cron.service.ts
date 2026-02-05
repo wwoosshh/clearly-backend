@@ -35,9 +35,7 @@ export class AdminCronService {
 
     if (expiredEstimates.length === 0) return;
 
-    this.logger.log(
-      `만료 견적 처리 시작: ${expiredEstimates.length}건 발견`,
-    );
+    this.logger.log(`만료 견적 처리 시작: ${expiredEstimates.length}건 발견`);
 
     let successCount = 0;
     let failCount = 0;
@@ -95,9 +93,7 @@ export class AdminCronService {
     });
 
     if (result.count > 0) {
-      this.logger.log(
-        `견적 요청 자동 만료 처리: ${result.count}건`,
-      );
+      this.logger.log(`견적 요청 자동 만료 처리: ${result.count}건`);
     }
   }
 
@@ -139,9 +135,7 @@ export class AdminCronService {
     });
 
     if (result.count > 0) {
-      this.logger.log(
-        `자동 완료 처리: ${result.count}건 (48시간 미확인)`,
-      );
+      this.logger.log(`자동 완료 처리: ${result.count}건 (48시간 미확인)`);
     }
   }
 

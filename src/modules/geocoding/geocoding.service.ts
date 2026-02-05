@@ -68,9 +68,7 @@ export class GeocodingService {
     }
   }
 
-  async searchAddressSuggestions(
-    query: string,
-  ): Promise<AddressSuggestion[]> {
+  async searchAddressSuggestions(query: string): Promise<AddressSuggestion[]> {
     const apiKey = this.configService.get<string>('KAKAO_REST_API_KEY');
 
     if (!apiKey) {

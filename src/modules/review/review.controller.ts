@@ -40,7 +40,9 @@ export class ReviewController {
   @Get('my')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: '내 리뷰 목록 조회 (유저: 작성한 리뷰, 업체: 받은 리뷰)' })
+  @ApiOperation({
+    summary: '내 리뷰 목록 조회 (유저: 작성한 리뷰, 업체: 받은 리뷰)',
+  })
   @ApiResponse({ status: 200, description: '내 리뷰 목록 조회 성공' })
   async findMyReviews(
     @CurrentUser('id') userId: string,
@@ -106,10 +108,7 @@ export class ReviewController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '리뷰 삭제' })
   @ApiResponse({ status: 200, description: '리뷰 삭제 성공' })
-  async remove(
-    @Param('id') id: string,
-    @CurrentUser('id') userId: string,
-  ) {
+  async remove(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.reviewService.remove(id, userId);
   }
 }

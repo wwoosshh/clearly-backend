@@ -64,9 +64,7 @@ export class ChatGateway
       sockets.push(client.id);
       this.userSocketMap.set(payload.sub, sockets);
 
-      this.logger.log(
-        `클라이언트 연결: ${client.id}, userId: ${payload.sub}`,
-      );
+      this.logger.log(`클라이언트 연결: ${client.id}, userId: ${payload.sub}`);
     } catch {
       this.logger.warn(`JWT 검증 실패: ${client.id}`);
       client.disconnect();

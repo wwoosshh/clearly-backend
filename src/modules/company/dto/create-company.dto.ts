@@ -1,9 +1,4 @@
-import {
-  IsNotEmpty,
-  IsString,
-  IsOptional,
-  MaxLength,
-} from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateCompanyDto {
@@ -25,7 +20,10 @@ export class CreateCompanyDto {
   @MaxLength(50, { message: '대표자명은 최대 50자까지 가능합니다.' })
   representative: string;
 
-  @ApiPropertyOptional({ description: '주소', example: '서울특별시 강남구 역삼동' })
+  @ApiPropertyOptional({
+    description: '주소',
+    example: '서울특별시 강남구 역삼동',
+  })
   @IsString({ message: '주소는 문자열이어야 합니다.' })
   @IsOptional()
   @MaxLength(300, { message: '주소는 최대 300자까지 가능합니다.' })
