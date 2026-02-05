@@ -8,14 +8,19 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { HttpService } from '@nestjs/axios';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
 import { LoginDto } from './dto/login.dto';
+import { KakaoLoginDto } from './dto/kakao-login.dto';
+import { NaverLoginDto } from './dto/naver-login.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 
@@ -27,6 +32,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly httpService: HttpService,
     private readonly geocodingService: GeocodingService,
     private readonly mailService: MailService,
   ) {}
@@ -70,10 +76,20 @@ export class AuthService {
 
   async registerCompany(registerCompanyDto: RegisterCompanyDto) {
     const {
-      email, password, name, phone,
-      businessName, businessNumber, representative,
-      address, detailAddress,
-      specialties, serviceAreas, description, minPrice, maxPrice,
+      email,
+      password,
+      name,
+      phone,
+      businessName,
+      businessNumber,
+      representative,
+      address,
+      detailAddress,
+      specialties,
+      serviceAreas,
+      description,
+      minPrice,
+      maxPrice,
     } = registerCompanyDto;
 
     const existingUser = await this.prisma.user.findUnique({
@@ -332,10 +348,7 @@ export class AuthService {
   async resetPassword(dto: ResetPasswordDto) {
     const { token, password } = dto;
 
-    const hashedToken = crypto
-      .createHash('sha256')
-      .update(token)
-      .digest('hex');
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
     const user = await this.prisma.user.findFirst({
       where: {
@@ -369,13 +382,248 @@ export class AuthService {
     return { message: '비밀번호가 성공적으로 변경되었습니다.' };
   }
 
+  async kakaoLogin(dto: KakaoLoginDto) {
+    const { code, redirectUri } = dto;
+
+    // 1. 인가코드로 카카오 액세스 토큰 발급
+    const kakaoTokenUrl = 'https://kauth.kakao.com/oauth/token';
+    const kakaoRestApiKey = this.configService.get('KAKAO_REST_API_KEY');
+
+    let kakaoAccessToken: string;
+    try {
+      const tokenResponse = await firstValueFrom(
+        this.httpService.post(
+          kakaoTokenUrl,
+          new URLSearchParams({
+            grant_type: 'authorization_code',
+            client_id: kakaoRestApiKey,
+            redirect_uri: redirectUri,
+            code,
+          }).toString(),
+          {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          },
+        ),
+      );
+      kakaoAccessToken = tokenResponse.data.access_token;
+    } catch {
+      throw new UnauthorizedException('카카오 인증에 실패했습니다.');
+    }
+
+    // 2. 카카오 사용자 정보 조회
+    let kakaoUser: { id: string; email?: string; nickname?: string };
+    try {
+      const userResponse = await firstValueFrom(
+        this.httpService.get('https://kapi.kakao.com/v2/user/me', {
+          headers: { Authorization: `Bearer ${kakaoAccessToken}` },
+        }),
+      );
+      const data = userResponse.data;
+      kakaoUser = {
+        id: String(data.id),
+        email: data.kakao_account?.email,
+        nickname: data.kakao_account?.profile?.nickname,
+      };
+    } catch {
+      throw new UnauthorizedException('카카오 사용자 정보 조회에 실패했습니다.');
+    }
+
+    if (!kakaoUser.email) {
+      throw new BadRequestException(
+        '카카오 계정에 이메일이 없습니다. 이메일 제공에 동의해주세요.',
+      );
+    }
+
+    return this.handleOAuthLogin('KAKAO', kakaoUser.id, kakaoUser.email, kakaoUser.nickname);
+  }
+
+  async naverLogin(dto: NaverLoginDto) {
+    const { code, state } = dto;
+
+    // 1. 인가코드로 네이버 액세스 토큰 발급
+    const naverClientId = this.configService.get('NAVER_CLIENT_ID');
+    const naverClientSecret = this.configService.get('NAVER_CLIENT_SECRET');
+
+    let naverAccessToken: string;
+    try {
+      const tokenResponse = await firstValueFrom(
+        this.httpService.post(
+          'https://nid.naver.com/oauth2.0/token',
+          new URLSearchParams({
+            grant_type: 'authorization_code',
+            client_id: naverClientId,
+            client_secret: naverClientSecret,
+            code,
+            state,
+          }).toString(),
+          {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          },
+        ),
+      );
+      naverAccessToken = tokenResponse.data.access_token;
+    } catch {
+      throw new UnauthorizedException('네이버 인증에 실패했습니다.');
+    }
+
+    // 2. 네이버 사용자 정보 조회
+    let naverUser: { id: string; email?: string; name?: string };
+    try {
+      const userResponse = await firstValueFrom(
+        this.httpService.get('https://openapi.naver.com/v1/nid/me', {
+          headers: { Authorization: `Bearer ${naverAccessToken}` },
+        }),
+      );
+      const profile = userResponse.data.response;
+      naverUser = {
+        id: profile.id,
+        email: profile.email,
+        name: profile.name || profile.nickname,
+      };
+    } catch {
+      throw new UnauthorizedException(
+        '네이버 사용자 정보 조회에 실패했습니다.',
+      );
+    }
+
+    if (!naverUser.email) {
+      throw new BadRequestException(
+        '네이버 계정에 이메일이 없습니다. 이메일 제공에 동의해주세요.',
+      );
+    }
+
+    return this.handleOAuthLogin('NAVER', naverUser.id, naverUser.email, naverUser.name);
+  }
+
+  async googleLogin(dto: GoogleLoginDto) {
+    const { code, redirectUri } = dto;
+
+    // 1. 인가코드로 구글 액세스 토큰 발급
+    const googleClientId = this.configService.get('GOOGLE_CLIENT_ID');
+    const googleClientSecret = this.configService.get('GOOGLE_CLIENT_SECRET');
+
+    let googleAccessToken: string;
+    try {
+      const tokenResponse = await firstValueFrom(
+        this.httpService.post(
+          'https://oauth2.googleapis.com/token',
+          new URLSearchParams({
+            grant_type: 'authorization_code',
+            client_id: googleClientId,
+            client_secret: googleClientSecret,
+            redirect_uri: redirectUri,
+            code,
+          }).toString(),
+          {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          },
+        ),
+      );
+      googleAccessToken = tokenResponse.data.access_token;
+    } catch {
+      throw new UnauthorizedException('구글 인증에 실패했습니다.');
+    }
+
+    // 2. 구글 사용자 정보 조회
+    let googleUser: { id: string; email?: string; name?: string };
+    try {
+      const userResponse = await firstValueFrom(
+        this.httpService.get(
+          'https://www.googleapis.com/oauth2/v2/userinfo',
+          {
+            headers: { Authorization: `Bearer ${googleAccessToken}` },
+          },
+        ),
+      );
+      const data = userResponse.data;
+      googleUser = {
+        id: data.id,
+        email: data.email,
+        name: data.name,
+      };
+    } catch {
+      throw new UnauthorizedException(
+        '구글 사용자 정보 조회에 실패했습니다.',
+      );
+    }
+
+    if (!googleUser.email) {
+      throw new BadRequestException(
+        '구글 계정에 이메일이 없습니다. 이메일 제공에 동의해주세요.',
+      );
+    }
+
+    return this.handleOAuthLogin('GOOGLE', googleUser.id, googleUser.email, googleUser.name);
+  }
+
+  /** 공통 OAuth 로그인/가입 처리 */
+  private async handleOAuthLogin(
+    provider: 'KAKAO' | 'NAVER' | 'GOOGLE',
+    oauthId: string,
+    email: string,
+    name?: string,
+  ) {
+    // 기존 OAuth 사용자 확인
+    let user = await this.prisma.user.findFirst({
+      where: { oauthProvider: provider, oauthId },
+    });
+
+    if (!user) {
+      // 동일 이메일로 다른 계정이 있는지 확인
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (existingUser) {
+        const providerNames = { KAKAO: '카카오', NAVER: '네이버', GOOGLE: '구글', LOCAL: '이메일' };
+        const existingProvider = providerNames[existingUser.oauthProvider as keyof typeof providerNames] || existingUser.oauthProvider;
+        throw new ConflictException(
+          `이미 ${existingProvider} 계정으로 가입된 이메일입니다.`,
+        );
+      }
+
+      // 신규 사용자 생성
+      const providerLabels = { KAKAO: '카카오', NAVER: '네이버', GOOGLE: '구글' };
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          name: name || `${providerLabels[provider]} 사용자`,
+          oauthProvider: provider,
+          oauthId,
+          role: 'USER',
+          isActive: true,
+        },
+      });
+
+      this.logger.log(
+        `${provider} 신규 가입: userId=${user.id}, email=${email}`,
+      );
+    }
+
+    if (!user.isActive) {
+      throw new ForbiddenException('비활성화된 계정입니다.');
+    }
+
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+      tokens,
+      isNewUser: !user.phone,
+    };
+  }
+
   private async generateTokens(userId: string, email: string, role: string) {
     const payload = { sub: userId, email, role };
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret:
-          this.configService.get('JWT_ACCESS_SECRET') || 'default-secret',
+        secret: this.configService.get('JWT_ACCESS_SECRET') || 'default-secret',
         expiresIn: 900, // 15 minutes
       }),
       this.jwtService.signAsync(payload, {

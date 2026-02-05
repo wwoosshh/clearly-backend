@@ -7,6 +7,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { HttpService } from '@nestjs/axios';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
@@ -71,6 +72,13 @@ describe('AuthService', () => {
           provide: GeocodingService,
           useValue: {
             geocodeAddress: jest.fn().mockResolvedValue(null),
+          },
+        },
+        {
+          provide: HttpService,
+          useValue: {
+            post: jest.fn(),
+            get: jest.fn(),
           },
         },
         {
@@ -213,9 +221,9 @@ describe('AuthService', () => {
         expiresAt: new Date(Date.now() - 86400000),
       });
 
-      await expect(
-        service.refreshToken('expired-token'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.refreshToken('expired-token')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 
@@ -251,9 +259,9 @@ describe('AuthService', () => {
     it('존재하지 않는 userId로 UnauthorizedException', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(
-        service.getProfile('nonexistent-id'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.getProfile('nonexistent-id')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 });
