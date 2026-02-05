@@ -12,6 +12,10 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
+  // 프록시 환경 (Railway 등) 에서 클라이언트 IP 정확히 식별
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set('trust proxy', 1);
+
   // 보안 헤더 (Helmet)
   app.use(helmet());
 
