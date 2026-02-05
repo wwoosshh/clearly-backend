@@ -1,4 +1,3 @@
-import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -21,8 +20,11 @@ async function bootstrap() {
   app.use(helmet());
 
   // CORS 설정 (환경별 분리)
-  const frontendUrl = configService.get('FRONTEND_URL') || 'http://localhost:3000';
-  const allowedOrigins = frontendUrl.split(',').map((url: string) => url.trim());
+  const frontendUrl =
+    configService.get('FRONTEND_URL') || 'http://localhost:3000';
+  const allowedOrigins = frontendUrl
+    .split(',')
+    .map((url: string) => url.trim());
 
   app.enableCors({
     origin: allowedOrigins,
