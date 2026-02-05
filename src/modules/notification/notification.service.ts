@@ -169,4 +169,37 @@ export class NotificationService {
       event.data,
     );
   }
+
+  @OnEvent(NOTIFICATION_EVENTS.COMPLETION_REPORTED)
+  async handleCompletionReported(event: NotificationEvent) {
+    await this.create(
+      event.userId,
+      'COMPLETION_REPORTED',
+      event.title,
+      event.content,
+      event.data,
+    );
+  }
+
+  @OnEvent(NOTIFICATION_EVENTS.MATCHING_COMPLETED)
+  async handleMatchingCompleted(event: NotificationEvent) {
+    await this.create(
+      event.userId,
+      'MATCHING_COMPLETED',
+      event.title,
+      event.content,
+      event.data,
+    );
+  }
+
+  @OnEvent(NOTIFICATION_EVENTS.MATCHING_CANCELLED)
+  async handleMatchingCancelled(event: NotificationEvent) {
+    await this.create(
+      event.userId,
+      'MATCHING_CANCELLED',
+      event.title,
+      event.content,
+      event.data,
+    );
+  }
 }
