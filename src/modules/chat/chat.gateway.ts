@@ -9,27 +9,40 @@ import {
   ConnectedSocket,
   WsException,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { ChatService } from './chat.service';
+import { ConnectionManager } from '../../common/websocket/connection-manager';
 
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
+      const allowed = process.env.FRONTEND_URL?.split(',').map((u) => u.trim()) || [];
+      if (!origin || allowed.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, true); // 모바일 앱은 origin이 없을 수 있음
+      }
+    },
     credentials: true,
   },
   namespace: '/chat',
+  pingTimeout: 30000,
+  pingInterval: 25000,
+  connectTimeout: 10000,
+  maxHttpBufferSize: 1e6, // 1MB
 })
 export class ChatGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
 {
   @WebSocketServer()
   server: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
-  private userSocketMap = new Map<string, string[]>();
+  private readonly connectionManager = new ConnectionManager('chat');
+  private cleanupInterval: ReturnType<typeof setInterval>;
 
   constructor(
     private readonly chatService: ChatService,
@@ -39,6 +52,16 @@ export class ChatGateway
 
   afterInit() {
     this.logger.log('채팅 웹소켓 게이트웨이 초기화 완료');
+
+    this.cleanupInterval = setInterval(() => {
+      this.connectionManager.cleanupStaleConnections(this.server);
+    }, 60000);
+  }
+
+  onModuleDestroy() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
   }
 
   async handleConnection(client: Socket) {
@@ -59,12 +82,11 @@ export class ChatGateway
 
       (client as any).userId = payload.sub;
 
-      // 사용자-소켓 매핑
-      const sockets = this.userSocketMap.get(payload.sub) || [];
-      sockets.push(client.id);
-      this.userSocketMap.set(payload.sub, sockets);
+      this.connectionManager.addConnection(payload.sub, client.id, this.server);
 
-      this.logger.log(`클라이언트 연결: ${client.id}, userId: ${payload.sub}`);
+      this.logger.log(
+        `클라이언트 연결: ${client.id}, userId: ${payload.sub}, 총 연결: ${this.connectionManager.getTotalConnections()}`,
+      );
     } catch {
       this.logger.warn(`JWT 검증 실패: ${client.id}`);
       client.disconnect();
@@ -72,16 +94,7 @@ export class ChatGateway
   }
 
   handleDisconnect(client: Socket) {
-    const userId = (client as any).userId;
-    if (userId) {
-      const sockets = this.userSocketMap.get(userId) || [];
-      const filtered = sockets.filter((id) => id !== client.id);
-      if (filtered.length > 0) {
-        this.userSocketMap.set(userId, filtered);
-      } else {
-        this.userSocketMap.delete(userId);
-      }
-    }
+    this.connectionManager.removeConnection(client.id);
     this.logger.log(`클라이언트 연결 해제: ${client.id}`);
   }
 

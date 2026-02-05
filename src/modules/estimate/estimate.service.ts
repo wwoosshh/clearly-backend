@@ -613,6 +613,90 @@ export class EstimateService {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
+  /** 예상 가격 조회 (공개 API) */
+  async getPriceEstimate(
+    cleaningType: string,
+    areaSize?: number,
+    address?: string,
+  ) {
+    const areaBucket = areaSize ? this.getAreaBucket(areaSize) : null;
+
+    // 1차: cleaningType + areaSize 구간 + 지역으로 조회
+    const baseWhere: any = {
+      status: 'COMPLETED',
+      estimatedPrice: { gt: 0 },
+      cleaningType: cleaningType as any,
+    };
+
+    if (areaBucket) {
+      baseWhere.areaSize = { gte: areaBucket.min, lte: areaBucket.max };
+    }
+
+    if (address) {
+      const region = address.split(/[\s,]+/)[0];
+      if (region && region.length >= 2) {
+        baseWhere.address = { contains: region };
+      }
+    }
+
+    type AggResult = {
+      _avg: { estimatedPrice: number | null };
+      _min: { estimatedPrice: number | null };
+      _max: { estimatedPrice: number | null };
+      _count: { id: number };
+    };
+
+    const aggregate = (where: any): Promise<AggResult> =>
+      this.prisma.matching.aggregate({
+        where,
+        _avg: { estimatedPrice: true },
+        _min: { estimatedPrice: true },
+        _max: { estimatedPrice: true },
+        _count: { id: true },
+      }) as Promise<AggResult>;
+
+    let result = await aggregate(baseWhere);
+
+    // 2차 폴백: 결과 0건이면 cleaningType + areaSize 구간만으로 조회
+    if (result._count.id === 0 && (address || areaBucket)) {
+      const fallbackWhere: any = {
+        status: 'COMPLETED',
+        estimatedPrice: { gt: 0 },
+        cleaningType: cleaningType as any,
+      };
+
+      if (areaBucket) {
+        fallbackWhere.areaSize = { gte: areaBucket.min, lte: areaBucket.max };
+      }
+
+      result = await aggregate(fallbackWhere);
+    }
+
+    // 3차 폴백: cleaningType만으로 조회
+    if (result._count.id === 0) {
+      result = await aggregate({
+        status: 'COMPLETED',
+        estimatedPrice: { gt: 0 },
+        cleaningType: cleaningType as any,
+      });
+    }
+
+    return {
+      minPrice: result._min.estimatedPrice ?? 0,
+      avgPrice: Math.round(result._avg.estimatedPrice ?? 0),
+      maxPrice: result._max.estimatedPrice ?? 0,
+      sampleCount: result._count.id,
+    };
+  }
+
+  private getAreaBucket(areaSize: number): { min: number; max: number } {
+    if (areaSize <= 15) return { min: 1, max: 15 };
+    if (areaSize <= 25) return { min: 16, max: 25 };
+    if (areaSize <= 35) return { min: 26, max: 35 };
+    if (areaSize <= 50) return { min: 36, max: 50 };
+    return { min: 51, max: 99999 };
+  }
+
   /** 업체가 제출한 견적 목록 (COMPANY) */
   async getCompanyEstimates(userId: string, page = 1, limit = 10) {
     const company = await this.prisma.company.findUnique({

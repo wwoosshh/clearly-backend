@@ -16,6 +16,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { CompanyService } from './company.service';
+import { CompanyMetricsService } from './company-metrics.service';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { SearchCompanyDto } from './dto/search-company.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -24,7 +25,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @ApiTags('업체')
 @Controller('companies')
 export class CompanyController {
-  constructor(private readonly companyService: CompanyService) {}
+  constructor(
+    private readonly companyService: CompanyService,
+    private readonly companyMetricsService: CompanyMetricsService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: '업체 목록 조회' })
@@ -51,6 +55,23 @@ export class CompanyController {
   @ApiResponse({ status: 404, description: '등록된 업체 없음' })
   async getMyCompany(@CurrentUser('id') userId: string) {
     return this.companyService.getMyCompany(userId);
+  }
+
+  @Get('my/metrics')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '내 업체 성과 지표 조회' })
+  @ApiResponse({ status: 200, description: '성과 지표 조회 성공' })
+  async getMyMetrics(@CurrentUser('id') userId: string) {
+    const company = await this.companyService.getMyCompany(userId);
+    return this.companyMetricsService.getCompanyMetrics(company.id);
+  }
+
+  @Get(':id/metrics')
+  @ApiOperation({ summary: '업체 성과 지표 조회' })
+  @ApiResponse({ status: 200, description: '성과 지표 조회 성공' })
+  async getCompanyMetrics(@Param('id') id: string) {
+    return this.companyMetricsService.getCompanyMetrics(id);
   }
 
   @Get(':id')

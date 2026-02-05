@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PointService } from '../point/point.service';
+import { CompanyMetricsService } from '../company/company-metrics.service';
 
 @Injectable()
 export class AdminCronService {
@@ -10,6 +11,7 @@ export class AdminCronService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pointService: PointService,
+    private readonly companyMetricsService: CompanyMetricsService,
   ) {}
 
   /**
@@ -307,5 +309,14 @@ export class AdminCronService {
     this.logger.log(
       `탈퇴 유저 데이터 삭제 완료: 성공 ${successCount}건, 실패 ${failCount}건`,
     );
+  }
+
+  /**
+   * 전체 업체 성과 지표 일괄 업데이트
+   * 매일 새벽 4시 실행
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  async handleCompanyMetricsUpdate() {
+    await this.companyMetricsService.updateAllCompanyMetrics();
   }
 }

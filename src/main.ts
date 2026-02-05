@@ -4,6 +4,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import compression from 'compression';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -19,6 +20,18 @@ async function bootstrap() {
 
   // 보안 헤더 (Helmet)
   app.use(helmet());
+
+  // 응답 압축 (gzip)
+  app.use(
+    compression({
+      threshold: 1024,
+      level: 6,
+      filter: (req, res) => {
+        if (req.headers['upgrade'] === 'websocket') return false;
+        return compression.filter(req, res);
+      },
+    }),
+  );
 
   // CORS 설정 (환경별 분리)
   const frontendUrl =

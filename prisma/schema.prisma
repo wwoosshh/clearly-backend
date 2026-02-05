@@ -241,6 +241,11 @@ model Company {
   serviceRange       Int?               @map("service_range")
   videos             Json?
   faq                Json?
+  conversionRate      Decimal?          @map("conversion_rate") @db.Decimal(5, 2)
+  cancellationRate    Decimal?          @map("cancellation_rate") @db.Decimal(5, 2)
+  repeatCustomerRate  Decimal?          @map("repeat_customer_rate") @db.Decimal(5, 2)
+  disputeRate         Decimal?          @map("dispute_rate") @db.Decimal(5, 2)
+  metricsUpdatedAt    DateTime?         @map("metrics_updated_at")
   searchScore        Decimal?           @map("search_score") @db.Decimal(5, 2)
   searchScoreAt      DateTime?          @map("search_score_at")
   approvedAt         DateTime?          @map("approved_at")
@@ -291,6 +296,7 @@ model Matching {
 
   @@index([userId, status])
   @@index([companyId, status])
+  @@index([status])
   @@index([createdAt(sort: Desc)])
   @@map("matchings")
 }
@@ -317,6 +323,7 @@ model ChatRoom {
 
   @@index([userId])
   @@index([companyId])
+  @@index([isActive])
   @@map("chat_rooms")
 }
 
@@ -362,6 +369,7 @@ model Review {
   company  Company  @relation(fields: [companyId], references: [id])
 
   @@index([companyId, createdAt(sort: Desc)])
+  @@index([companyId, isVisible])
   @@map("reviews")
 }
 
@@ -481,6 +489,7 @@ model EstimateRequest {
 
   @@index([status, createdAt(sort: Desc)])
   @@index([userId])
+  @@index([userId, status])
   @@map("estimate_requests")
 }
 
@@ -504,6 +513,9 @@ model Estimate {
 
   @@index([estimateRequestId])
   @@index([companyId])
+  @@index([companyId, status])
+  @@index([status, createdAt])
+  @@index([estimateRequestId, companyId])
   @@map("estimates")
 }
 
