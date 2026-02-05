@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "npx prisma generate && nest build",
+    "build": "echo '=== BUILD START ===' && echo 'Node:' && node -v && echo 'npm:' && npm -v && echo '--- prisma generate ---' && npx prisma generate 2>&1 && echo '--- nest build ---' && npx nest build 2>&1 && echo '--- checking dist ---' && ls -la dist/ && echo '=== BUILD SUCCESS ==='",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
