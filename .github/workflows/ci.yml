@@ -36,5 +36,9 @@ jobs:
       - name: Test
         run: npm test -- --no-coverage
 
+      - name: Security Audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
       - name: Build
         run: npx nest build

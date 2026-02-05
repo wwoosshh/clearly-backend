@@ -16,8 +16,7 @@ import {
   NotificationEvent,
   BulkNotificationEvent,
 } from '../notification/notification.events';
-
-const ESTIMATE_POINT_COST = 50; // 견적 제출 시 차감 포인트
+import { SystemSettingService } from '../system-setting/system-setting.service';
 
 @Injectable()
 export class EstimateService {
@@ -28,6 +27,7 @@ export class EstimateService {
     private readonly pointService: PointService,
     private readonly chatService: ChatService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly settings: SystemSettingService,
   ) {}
 
   /** 견적요청 생성 (USER) */
@@ -39,9 +39,10 @@ export class EstimateService {
         status: 'OPEN',
       },
     });
-    if (activeRequestCount >= 3) {
+    const maxConcurrent = this.settings.get('max_concurrent_requests', 3);
+    if (activeRequestCount >= maxConcurrent) {
       throw new BadRequestException(
-        '동시에 최대 3건의 견적요청만 가능합니다. 기존 요청이 마감된 후 다시 시도해주세요.',
+        `동시에 최대 ${maxConcurrent}건의 견적요청만 가능합니다. 기존 요청이 마감된 후 다시 시도해주세요.`,
       );
     }
 
@@ -285,9 +286,10 @@ export class EstimateService {
     }
 
     // 포인트 차감
+    const pointCost = this.settings.get('estimate_point_cost', 50);
     await this.pointService.usePoints(
       company.id,
-      ESTIMATE_POINT_COST,
+      pointCost,
       '견적 제출',
       estimateRequestId,
     );
@@ -303,7 +305,7 @@ export class EstimateService {
         availableDate: dto.availableDate
           ? new Date(dto.availableDate)
           : undefined,
-        pointsUsed: ESTIMATE_POINT_COST,
+        pointsUsed: pointCost,
         images: dto.images,
       },
       include: {
@@ -575,7 +577,8 @@ export class EstimateService {
   ) {
     for (const est of estimates) {
       if (est.pointsUsed <= 0) continue;
-      const refundAmount = Math.floor(est.pointsUsed * 0.5);
+      const refundRate = this.settings.get('auto_refund_rate', 50) / 100;
+      const refundAmount = Math.floor(est.pointsUsed * refundRate);
       if (refundAmount <= 0) continue;
 
       try {

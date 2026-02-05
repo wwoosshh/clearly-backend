@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PointService } from '../point/point.service';
 import { CompanyMetricsService } from '../company/company-metrics.service';
+import { SystemSettingService } from '../system-setting/system-setting.service';
 
 @Injectable()
 export class AdminCronService {
@@ -12,6 +13,7 @@ export class AdminCronService {
     private readonly prisma: PrismaService,
     private readonly pointService: PointService,
     private readonly companyMetricsService: CompanyMetricsService,
+    private readonly settings: SystemSettingService,
   ) {}
 
   /**
@@ -20,8 +22,9 @@ export class AdminCronService {
    */
   @Cron(CronExpression.EVERY_HOUR)
   async handleExpiredEstimates() {
+    const expiryDays = this.settings.get('estimate_expiry_days', 3);
     const threeDaysAgo = new Date();
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - expiryDays);
 
     // SUBMITTED 상태이고 3일 이상 경과한 견적 조회
     const expiredEstimates = await this.prisma.estimate.findMany({
@@ -55,7 +58,7 @@ export class AdminCronService {
           await this.pointService.refundPoints(
             estimate.companyId,
             estimate.pointsUsed,
-            '견적 미응답 자동 환불 (3일 초과)',
+            `견적 미응답 자동 환불 (${expiryDays}일 초과)`,
             estimate.id,
           );
         }
@@ -83,8 +86,9 @@ export class AdminCronService {
    */
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleExpiredEstimateRequests() {
+    const requestExpiryDays = this.settings.get('request_expiry_days', 7);
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - requestExpiryDays);
 
     const result = await this.prisma.estimateRequest.updateMany({
       where: {
@@ -122,8 +126,9 @@ export class AdminCronService {
    */
   @Cron(CronExpression.EVERY_DAY_AT_1AM)
   async handleAutoCompletion() {
+    const autoCompleteHours = this.settings.get('auto_complete_hours', 48);
     const twoDaysAgo = new Date();
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    twoDaysAgo.setTime(twoDaysAgo.getTime() - autoCompleteHours * 60 * 60 * 1000);
 
     const result = await this.prisma.matching.updateMany({
       where: {
@@ -318,5 +323,14 @@ export class AdminCronService {
   @Cron(CronExpression.EVERY_DAY_AT_4AM)
   async handleCompanyMetricsUpdate() {
     await this.companyMetricsService.updateAllCompanyMetrics();
+  }
+
+  /**
+   * 성과 기반 자동 경고/정지 조치
+   * 매일 새벽 5시 실행 (4시 metrics 갱신 후)
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_5AM)
+  async handleAutoActions() {
+    await this.companyMetricsService.applyAutoActionsAll();
   }
 }

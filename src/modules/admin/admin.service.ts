@@ -2,8 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PointService } from '../point/point.service';
 import { ResolveReportDto, ReportActionType } from './dto/resolve-report.dto';
-
-const WELCOME_POINT_AMOUNT = 500; // 신규 업체 승인 시 무료 지급 포인트
+import { SystemSettingService } from '../system-setting/system-setting.service';
 
 @Injectable()
 export class AdminService {
@@ -12,6 +11,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pointService: PointService,
+    private readonly settings: SystemSettingService,
   ) {}
 
   // ─── 대시보드 ───────────────────────────────────────────
@@ -308,7 +308,7 @@ export class AdminService {
       throw new NotFoundException('업체를 찾을 수 없습니다.');
     }
 
-    const [matchings, reviews, estimates, pointWallet, subscriptions] =
+    const [matchings, reviews, estimates, pointWallet, subscriptions, warnings] =
       await Promise.all([
         this.prisma.matching.findMany({
           where: { companyId },
@@ -355,6 +355,11 @@ export class AdminService {
           take: 5,
           orderBy: { createdAt: 'desc' },
         }),
+        this.prisma.companyWarning.findMany({
+          where: { companyId },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        }),
       ]);
 
     return {
@@ -364,6 +369,7 @@ export class AdminService {
       estimates,
       pointWallet,
       subscriptions,
+      warnings,
     };
   }
 
@@ -394,14 +400,15 @@ export class AdminService {
     });
 
     // 신규 업체 승인 시 웰컴 포인트 지급 (트랜잭션 외부 - 실패해도 승인은 유지)
+    const welcomeAmount = this.settings.get('welcome_point_amount', 500);
     try {
       await this.pointService.chargePoints(
         companyId,
-        WELCOME_POINT_AMOUNT,
+        welcomeAmount,
         '신규 업체 승인 웰컴 포인트',
       );
       this.logger.log(
-        `웰컴 포인트 지급: companyId=${companyId}, amount=${WELCOME_POINT_AMOUNT}P`,
+        `웰컴 포인트 지급: companyId=${companyId}, amount=${welcomeAmount}P`,
       );
     } catch (error) {
       this.logger.error(
@@ -953,17 +960,33 @@ export class AdminService {
     };
   }
 
+  // ─── 경고 관리 ────────────────────────────────────────
+
+  async resolveWarning(warningId: string) {
+    const warning = await this.prisma.companyWarning.findUnique({
+      where: { id: warningId },
+    });
+
+    if (!warning) {
+      throw new NotFoundException('경고를 찾을 수 없습니다.');
+    }
+
+    return this.prisma.companyWarning.update({
+      where: { id: warningId },
+      data: { isResolved: true, resolvedAt: new Date() },
+    });
+  }
+
   // ─── 설정 ──────────────────────────────────────────────
 
   async getSettings() {
-    return {
-      message: '시스템 설정 기능은 추후 구현 예정입니다.',
-    };
+    return this.settings.getAll();
   }
 
-  async updateSettings(data: any) {
-    return {
-      message: '시스템 설정 기능은 추후 구현 예정입니다.',
-    };
+  async updateSettings(data: Record<string, any>) {
+    for (const [key, value] of Object.entries(data)) {
+      await this.settings.set(key, value);
+    }
+    return this.settings.getAll();
   }
 }

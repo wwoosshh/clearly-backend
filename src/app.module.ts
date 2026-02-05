@@ -24,6 +24,7 @@ import { FaqModule } from './modules/faq/faq.module';
 import { InquiryModule } from './modules/inquiry/inquiry.module';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
 import { HealthModule } from './modules/health/health.module';
+import { SystemSettingModule } from './modules/system-setting/system-setting.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { HealthModule } from './modules/health/health.module';
     ]),
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
+    SystemSettingModule,
     PrismaModule,
     AuthModule,
     UserModule,

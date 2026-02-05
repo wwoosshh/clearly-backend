@@ -9,6 +9,8 @@ export const NOTIFICATION_EVENTS = {
   MATCHING_COMPLETED: 'notification.matching.completed',
   MATCHING_CANCELLED: 'notification.matching.cancelled',
   COMPLETION_REPORTED: 'notification.matching.completionReported',
+  COMPANY_WARNING: 'notification.company.warning',
+  COMPANY_SUSPENDED: 'notification.company.suspended',
 } as const;
 
 export class NotificationEvent {

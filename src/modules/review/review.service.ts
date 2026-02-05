@@ -80,21 +80,21 @@ export class ReviewService {
       },
     });
 
-    // 업체 평균 평점 및 리뷰 수 갱신
-    const stats = await this.prisma.review.aggregate({
-      where: { companyId: matching.companyId, isVisible: true },
-      _avg: { rating: true },
-      _count: true,
+    // 업체 평균 평점 및 리뷰 수 증분 갱신
+    const companyData = await this.prisma.company.findUnique({
+      where: { id: matching.companyId },
+      select: { averageRating: true, totalReviews: true },
     });
+    const oldAvg = Number(companyData?.averageRating ?? 0);
+    const oldCount = companyData?.totalReviews ?? 0;
+    const newCount = oldCount + 1;
+    const newAvg = parseFloat(
+      ((oldAvg * oldCount + dto.rating) / newCount).toFixed(2),
+    );
 
     await this.prisma.company.update({
       where: { id: matching.companyId },
-      data: {
-        averageRating: stats._avg.rating
-          ? parseFloat(stats._avg.rating.toFixed(2))
-          : 0,
-        totalReviews: stats._count,
-      },
+      data: { averageRating: newAvg, totalReviews: newCount },
     });
 
     this.logger.log(
@@ -285,22 +285,23 @@ export class ReviewService {
       },
     });
 
-    // 평점 갱신
-    if (data.rating !== undefined) {
-      const stats = await this.prisma.review.aggregate({
-        where: { companyId: review.companyId, isVisible: true },
-        _avg: { rating: true },
-        _count: true,
-      });
-      await this.prisma.company.update({
+    // 평점 갱신 (증분 계산)
+    if (data.rating !== undefined && data.rating !== review.rating) {
+      const companyData = await this.prisma.company.findUnique({
         where: { id: review.companyId },
-        data: {
-          averageRating: stats._avg.rating
-            ? parseFloat(stats._avg.rating.toFixed(2))
-            : 0,
-          totalReviews: stats._count,
-        },
+        select: { averageRating: true, totalReviews: true },
       });
+      const oldAvg = Number(companyData?.averageRating ?? 0);
+      const count = companyData?.totalReviews ?? 0;
+      if (count > 0) {
+        const newAvg = parseFloat(
+          ((oldAvg * count - review.rating + data.rating) / count).toFixed(2),
+        );
+        await this.prisma.company.update({
+          where: { id: review.companyId },
+          data: { averageRating: newAvg },
+        });
+      }
     }
 
     return updated;
@@ -366,20 +367,26 @@ export class ReviewService {
 
     await this.prisma.review.delete({ where: { id } });
 
-    // 평점 갱신
-    const stats = await this.prisma.review.aggregate({
-      where: { companyId: review.companyId, isVisible: true },
-      _avg: { rating: true },
-      _count: true,
+    // 평점 갱신 (증분 계산)
+    const companyData = await this.prisma.company.findUnique({
+      where: { id: review.companyId },
+      select: { averageRating: true, totalReviews: true },
     });
+    const oldCount = companyData?.totalReviews ?? 0;
+    const newCount = oldCount - 1;
+    const newAvg =
+      newCount > 0
+        ? parseFloat(
+            (
+              (Number(companyData?.averageRating ?? 0) * oldCount -
+                review.rating) /
+              newCount
+            ).toFixed(2),
+          )
+        : 0;
     await this.prisma.company.update({
       where: { id: review.companyId },
-      data: {
-        averageRating: stats._avg.rating
-          ? parseFloat(stats._avg.rating.toFixed(2))
-          : 0,
-        totalReviews: stats._count,
-      },
+      data: { averageRating: newAvg, totalReviews: newCount },
     });
 
     return { deleted: true };
