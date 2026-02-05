@@ -23,7 +23,8 @@ export class ConnectionManager {
       const oldSocketId = sockets.shift()!;
       this.socketUserMap.delete(oldSocketId);
       if (server) {
-        const oldSocket = server.sockets.sockets.get(oldSocketId);
+        const activeSockets = this.getActiveSockets(server);
+        const oldSocket = activeSockets?.get(oldSocketId);
         if (oldSocket) {
           this.logger.warn(
             `연결 수 초과로 기존 소켓 해제: userId=${userId}, socketId=${oldSocketId}`,
@@ -68,9 +69,12 @@ export class ConnectionManager {
   }
 
   cleanupStaleConnections(server: Server): void {
+    const activeSockets = this.getActiveSockets(server);
+    if (!activeSockets) return;
+
     let cleaned = 0;
     for (const [socketId, userId] of this.socketUserMap.entries()) {
-      if (!server.sockets.sockets.has(socketId)) {
+      if (!activeSockets.has(socketId)) {
         this.socketUserMap.delete(socketId);
         const sockets = this.userSocketMap.get(userId);
         if (sockets) {
@@ -87,5 +91,13 @@ export class ConnectionManager {
     if (cleaned > 0) {
       this.logger.log(`고아 매핑 정리: ${cleaned}건`);
     }
+  }
+
+  /** namespace 서버와 root 서버 모두 대응 */
+  private getActiveSockets(server: Server): Map<string, any> | null {
+    if (!server?.sockets) return null;
+    // root Server: server.sockets.sockets (Map)
+    // Namespace: server.sockets 자체가 Map
+    return (server.sockets as any).sockets ?? server.sockets;
   }
 }
