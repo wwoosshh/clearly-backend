@@ -462,6 +462,8 @@ model EstimateRequest {
   cleaningType  CleaningType          @map("cleaning_type")
   address       String                @db.VarChar(300)
   detailAddress String?               @map("detail_address") @db.VarChar(200)
+  latitude      Decimal?              @db.Decimal(10, 7)
+  longitude     Decimal?              @db.Decimal(10, 7)
   areaSize      Int?                  @map("area_size")
   desiredDate   DateTime?             @map("desired_date") @db.Date
   desiredTime   String?               @map("desired_time") @db.VarChar(50)

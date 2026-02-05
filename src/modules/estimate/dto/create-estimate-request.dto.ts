@@ -4,6 +4,7 @@ import {
   IsString,
   IsOptional,
   IsInt,
+  IsNumber,
   IsEnum,
   IsArray,
   ArrayMaxSize,
@@ -28,6 +29,16 @@ export class CreateEstimateRequestDto {
   @IsString()
   @MaxLength(200)
   detailAddress?: string;
+
+  @ApiPropertyOptional({ description: '위도 (주소 자동완성에서 제공)' })
+  @IsOptional()
+  @IsNumber()
+  latitude?: number;
+
+  @ApiPropertyOptional({ description: '경도 (주소 자동완성에서 제공)' })
+  @IsOptional()
+  @IsNumber()
+  longitude?: number;
 
   @ApiPropertyOptional({ description: '면적 (평수)' })
   @IsOptional()

@@ -69,6 +69,8 @@ export class EstimateService {
         cleaningType: dto.cleaningType,
         address: dto.address,
         detailAddress: dto.detailAddress,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
         areaSize: dto.areaSize,
         desiredDate: dto.desiredDate ? new Date(dto.desiredDate) : undefined,
         desiredTime: dto.desiredTime,
@@ -95,30 +97,49 @@ export class EstimateService {
         serviceAreas: true,
         specialties: true,
         address: true,
+        latitude: true,
+        longitude: true,
+        serviceRange: true,
       },
     });
 
+    const reqLat = dto.latitude ?? (request as any).latitude;
+    const reqLng = dto.longitude ?? (request as any).longitude;
+
     // 견적 요청의 지역/전문분야와 매칭되는 업체만 필터링
     const matchingCompanies = allApprovedCompanies.filter((company) => {
-      // 전문분야 매칭: 업체의 specialties에 요청한 cleaningType이 포함되어야 함
+      // 전문분야 매칭
       const specs = Array.isArray(company.specialties)
         ? (company.specialties as string[])
         : [];
       const hasSpecialty =
         specs.length === 0 || specs.some((s) => s === dto.cleaningType);
 
-      // 지역 매칭: 업체의 serviceAreas 또는 address가 요청 주소와 관련 있어야 함
+      if (!hasSpecialty) return false;
+
+      // 거리 기반 매칭 (좌표가 있는 경우 우선 사용)
+      if (reqLat && reqLng && company.latitude && company.longitude) {
+        const dist = this.haversineKm(
+          Number(reqLat),
+          Number(reqLng),
+          Number(company.latitude),
+          Number(company.longitude),
+        );
+        const maxRange = company.serviceRange ?? 50; // 기본 50km
+        return dist <= maxRange;
+      }
+
+      // 좌표 없으면 텍스트 기반 지역 매칭 (폴백)
       const areas = Array.isArray(company.serviceAreas)
         ? (company.serviceAreas as string[])
         : [];
-      // 주소에서 시/도, 구/군 추출 (예: "서울특별시 강남구 ..." → ["서울", "강남"])
       const requestRegionTokens = dto.address
         .replace(/특별시|광역시|특별자치시|특별자치도/g, '')
         .split(/[\s,]+/)
         .filter((t) => t.length >= 2)
         .slice(0, 3);
 
-      const hasRegion =
+      return (
         areas.length === 0 ||
         areas.some((area) =>
           requestRegionTokens.some((token) => area.includes(token)),
@@ -126,9 +147,8 @@ export class EstimateService {
         (company.address &&
           requestRegionTokens.some((token) =>
             company.address!.includes(token),
-          ));
-
-      return hasSpecialty && hasRegion;
+          ))
+      );
     });
 
     if (matchingCompanies.length > 0) {
@@ -546,6 +566,23 @@ export class EstimateService {
         );
       }
     }
+  }
+
+  /** Haversine 거리 계산 (km) */
+  private haversineKm(
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
+  ): number {
+    const R = 6371;
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   /** 업체가 제출한 견적 목록 (COMPANY) */
