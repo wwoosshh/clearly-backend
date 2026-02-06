@@ -196,6 +196,7 @@ model User {
   estimateRequests    EstimateRequest[]
   inquiries           Inquiry[]
   deviceTokens        DeviceToken[]
+  customerMemos       CustomerMemo[]
 
   @@unique([oauthProvider, oauthId])
   @@index([email])
@@ -276,6 +277,7 @@ model Company {
   estimates     Estimate[]
   pointWallet   PointWallet?
   warnings      CompanyWarning[]
+  customerMemos CustomerMemo[]
 
   @@index([verificationStatus])
   @@index([averageRating(sort: Desc)])
@@ -642,4 +644,20 @@ model DeviceToken {
 
   @@index([userId, isActive])
   @@map("device_tokens")
+}
+
+model CustomerMemo {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  userId    String   @map("user_id")
+  content   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+  @@index([companyId])
+  @@map("customer_memos")
 }

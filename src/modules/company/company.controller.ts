@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Body,
   Param,
@@ -17,8 +18,10 @@ import {
 } from '@nestjs/swagger';
 import { CompanyService } from './company.service';
 import { CompanyMetricsService } from './company-metrics.service';
+import { CompanyCustomerService } from './company-customer.service';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { SearchCompanyDto } from './dto/search-company.dto';
+import { GetCustomersDto } from './dto/get-customers.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -28,6 +31,7 @@ export class CompanyController {
   constructor(
     private readonly companyService: CompanyService,
     private readonly companyMetricsService: CompanyMetricsService,
+    private readonly companyCustomerService: CompanyCustomerService,
   ) {}
 
   @Get()
@@ -65,6 +69,46 @@ export class CompanyController {
   async getMyMetrics(@CurrentUser('id') userId: string) {
     const company = await this.companyService.getMyCompany(userId);
     return this.companyMetricsService.getCompanyMetrics(company.id);
+  }
+
+  @Get('my/customers')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '내 고객 목록 조회' })
+  @ApiResponse({ status: 200, description: '고객 목록 조회 성공' })
+  async getMyCustomers(
+    @CurrentUser('id') userId: string,
+    @Query() dto: GetCustomersDto,
+  ) {
+    const company = await this.companyService.getMyCompany(userId);
+    return { data: await this.companyCustomerService.getCustomers(company.id, dto) };
+  }
+
+  @Get('my/customers/:userId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '고객 상세 조회' })
+  @ApiResponse({ status: 200, description: '고객 상세 조회 성공' })
+  async getCustomerDetail(
+    @CurrentUser('id') currentUserId: string,
+    @Param('userId') targetUserId: string,
+  ) {
+    const company = await this.companyService.getMyCompany(currentUserId);
+    return { data: await this.companyCustomerService.getCustomerDetail(company.id, targetUserId) };
+  }
+
+  @Put('my/customers/:userId/memo')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '고객 메모 저장' })
+  @ApiResponse({ status: 200, description: '고객 메모 저장 성공' })
+  async upsertCustomerMemo(
+    @CurrentUser('id') currentUserId: string,
+    @Param('userId') targetUserId: string,
+    @Body('content') content: string,
+  ) {
+    const company = await this.companyService.getMyCompany(currentUserId);
+    return { data: await this.companyCustomerService.upsertMemo(company.id, targetUserId, content) };
   }
 
   @Get(':id/metrics')
