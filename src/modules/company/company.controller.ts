@@ -81,7 +81,7 @@ export class CompanyController {
     @Query() dto: GetCustomersDto,
   ) {
     const company = await this.companyService.getMyCompany(userId);
-    return { data: await this.companyCustomerService.getCustomers(company.id, dto) };
+    return this.companyCustomerService.getCustomers(company.id, dto);
   }
 
   @Get('my/customers/:userId')
@@ -94,7 +94,7 @@ export class CompanyController {
     @Param('userId') targetUserId: string,
   ) {
     const company = await this.companyService.getMyCompany(currentUserId);
-    return { data: await this.companyCustomerService.getCustomerDetail(company.id, targetUserId) };
+    return this.companyCustomerService.getCustomerDetail(company.id, targetUserId);
   }
 
   @Put('my/customers/:userId/memo')
@@ -108,7 +108,7 @@ export class CompanyController {
     @Body('content') content: string,
   ) {
     const company = await this.companyService.getMyCompany(currentUserId);
-    return { data: await this.companyCustomerService.upsertMemo(company.id, targetUserId, content) };
+    return this.companyCustomerService.upsertMemo(company.id, targetUserId, content);
   }
 
   @Get(':id/metrics')
