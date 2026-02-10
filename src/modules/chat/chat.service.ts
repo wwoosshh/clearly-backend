@@ -280,23 +280,29 @@ export class ChatService {
       },
     });
 
-    // 안 읽은 메시지 수 계산
-    const roomsWithUnread = await Promise.all(
-      rooms.map(async (room) => {
-        const unreadCount = await this.prisma.chatMessage.count({
-          where: {
-            roomId: room.id,
-            isRead: false,
-            senderId: { not: userId },
-            // 업체 유저인 경우 company의 userId로 필터링
-            ...(company ? { senderId: { not: company.userId } } : {}),
-          },
-        });
-        return { ...room, unreadCount };
-      }),
+    // 안 읽은 메시지 수 계산 (단일 groupBy 쿼리)
+    const roomIds = rooms.map((r) => r.id);
+    const unreadCounts =
+      roomIds.length > 0
+        ? await this.prisma.chatMessage.groupBy({
+            by: ['roomId'],
+            where: {
+              roomId: { in: roomIds },
+              isRead: false,
+              senderId: { not: company ? company.userId : userId },
+            },
+            _count: { id: true },
+          })
+        : [];
+
+    const unreadMap = new Map(
+      unreadCounts.map((u) => [u.roomId, u._count.id]),
     );
 
-    return roomsWithUnread;
+    return rooms.map((room) => ({
+      ...room,
+      unreadCount: unreadMap.get(room.id) ?? 0,
+    }));
   }
 
   /** 메시지 읽음 처리 */
