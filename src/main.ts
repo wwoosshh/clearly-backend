@@ -64,8 +64,8 @@ async function bootstrap() {
   app.useGlobalInterceptors(new TransformInterceptor());
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Clearly API')
-    .setDescription('이사청소 매칭 플랫폼 Clearly API')
+    .setTitle('BarunOrder API')
+    .setDescription('이사청소 매칭 플랫폼 바른오더 API')
     .setVersion('1.0')
     .addBearerAuth()
     .build();

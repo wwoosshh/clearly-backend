@@ -97,7 +97,7 @@ export class FcmService implements OnModuleInit {
       data: data ?? undefined,
       android: {
         priority: 'high',
-        notification: { channelId: 'clearly_default' },
+        notification: { channelId: 'barun_order_default' },
       },
       apns: {
         payload: { aps: { sound: 'default', badge: 1 } },

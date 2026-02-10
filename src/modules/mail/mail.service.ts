@@ -12,7 +12,7 @@ export class MailService {
     this.resend = new Resend(this.configService.get('RESEND_API_KEY', ''));
     this.from = this.configService.get(
       'RESEND_FROM',
-      'Clearly <onboarding@resend.dev>',
+      '바른오더 <onboarding@resend.dev>',
     );
   }
 
@@ -38,7 +38,7 @@ export class MailService {
                 <!-- Header -->
                 <tr>
                   <td style="padding:32px 32px 0;">
-                    <h1 style="margin:0;font-size:22px;font-weight:800;color:#111827;letter-spacing:-0.5px;">Clearly</h1>
+                    <h1 style="margin:0;font-size:22px;font-weight:800;color:#111827;letter-spacing:-0.5px;">바른오더</h1>
                   </td>
                 </tr>
                 <!-- Body -->
@@ -62,7 +62,7 @@ export class MailService {
                 <!-- Footer -->
                 <tr>
                   <td style="padding:16px 32px;border-top:1px solid #f3f4f6;">
-                    <p style="margin:0;font-size:11px;color:#d1d5db;">&copy; Clearly. All rights reserved.</p>
+                    <p style="margin:0;font-size:11px;color:#d1d5db;">&copy; 바른오더. All rights reserved.</p>
                   </td>
                 </tr>
               </table>
@@ -77,7 +77,7 @@ export class MailService {
       const { error } = await this.resend.emails.send({
         from: this.from,
         to,
-        subject: '[Clearly] 비밀번호 재설정',
+        subject: '[바른오더] 비밀번호 재설정',
         html,
       });
 

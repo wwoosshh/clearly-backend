@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "0.0.1",
-  "description": "Clearly - 이사청소 매칭 플랫폼 백엔드",
+  "description": "바른오더 - 이사청소 매칭 플랫폼 백엔드",
   "author": "",
   "private": true,
   "license": "UNLICENSED",
