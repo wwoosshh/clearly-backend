@@ -6,6 +6,10 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Param,
+  Query,
+  Req,
+  Res,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -14,6 +18,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
@@ -134,6 +139,59 @@ export class AuthController {
   @ApiResponse({ status: 400, description: '유효하지 않거나 만료된 토큰' })
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
     return this.authService.resetPassword(resetPasswordDto);
+  }
+
+  @Get('oauth/:provider')
+  @ApiOperation({ summary: 'OAuth 소셜 로그인 시작 (리다이렉트)' })
+  @ApiResponse({ status: 302, description: 'OAuth 제공자 로그인 페이지로 리다이렉트' })
+  async oauthRedirect(
+    @Param('provider') provider: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const callbackUrl = `${req.protocol}://${req.get('host')}/api/auth/oauth/${provider}/callback`;
+    const url = this.authService.getOAuthUrl(provider, callbackUrl);
+    return res.redirect(url);
+  }
+
+  @Get('oauth/:provider/callback')
+  @ApiOperation({ summary: 'OAuth 콜백 처리' })
+  @ApiResponse({ status: 302, description: '프론트엔드로 리다이렉트 (토큰 포함)' })
+  async oauthCallback(
+    @Param('provider') provider: string,
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Query('error') error: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const frontendUrl = this.authService.getFrontendUrl();
+
+    if (error || !code) {
+      return res.redirect(
+        `${frontendUrl}/login?error=${encodeURIComponent('소셜 로그인이 취소되었습니다.')}`,
+      );
+    }
+
+    try {
+      const callbackUrl = `${req.protocol}://${req.get('host')}/api/auth/oauth/${provider}/callback`;
+      const result = await this.authService.handleOAuthCallback(
+        provider,
+        code,
+        callbackUrl,
+        state,
+      );
+      const params = new URLSearchParams({
+        accessToken: result.tokens.accessToken,
+        refreshToken: result.tokens.refreshToken,
+      });
+      return res.redirect(`${frontendUrl}/auth/callback?${params.toString()}`);
+    } catch (err: any) {
+      const message = encodeURIComponent(
+        err.message || '소셜 로그인에 실패했습니다.',
+      );
+      return res.redirect(`${frontendUrl}/login?error=${message}`);
+    }
   }
 
   @Get('me')

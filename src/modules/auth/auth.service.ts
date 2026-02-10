@@ -648,4 +648,53 @@ export class AuthService {
 
     return { accessToken, refreshToken };
   }
+
+  /** OAuth 인가 URL 생성 */
+  getOAuthUrl(provider: string, callbackUrl: string): string {
+    switch (provider) {
+      case 'kakao': {
+        const clientId = this.configService.get('KAKAO_REST_API_KEY');
+        return `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code`;
+      }
+      case 'naver': {
+        const clientId = this.configService.get('NAVER_CLIENT_ID');
+        const state = crypto.randomBytes(16).toString('hex');
+        return `https://nid.naver.com/oauth2.0/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&state=${state}`;
+      }
+      case 'google': {
+        const clientId = this.configService.get('GOOGLE_CLIENT_ID');
+        return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=email%20profile`;
+      }
+      default:
+        throw new BadRequestException(
+          `지원하지 않는 소셜 로그인입니다: ${provider}`,
+        );
+    }
+  }
+
+  /** OAuth 콜백 처리 (인가코드 → 토큰 교환 → 로그인/가입) */
+  async handleOAuthCallback(
+    provider: string,
+    code: string,
+    callbackUrl: string,
+    state?: string,
+  ) {
+    switch (provider) {
+      case 'kakao':
+        return this.kakaoLogin({ code, redirectUri: callbackUrl });
+      case 'naver':
+        return this.naverLogin({ code, state: state || '' });
+      case 'google':
+        return this.googleLogin({ code, redirectUri: callbackUrl });
+      default:
+        throw new BadRequestException(
+          `지원하지 않는 소셜 로그인입니다: ${provider}`,
+        );
+    }
+  }
+
+  /** 프론트엔드 URL */
+  getFrontendUrl(): string {
+    return this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
+  }
 }
