@@ -595,7 +595,8 @@ export class EstimateService {
   ) {
     for (const est of estimates) {
       if (est.pointsUsed <= 0) continue;
-      const refundRate = this.settings.get('auto_refund_rate', 50) / 100;
+      const rawRate = this.settings.get('auto_refund_rate', 50);
+      const refundRate = Math.min(100, Math.max(0, rawRate)) / 100;
       const refundAmount = Math.floor(est.pointsUsed * refundRate);
       if (refundAmount <= 0) continue;
 

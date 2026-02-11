@@ -87,19 +87,61 @@ export class AdminCronService {
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleExpiredEstimateRequests() {
     const requestExpiryDays = this.settings.get('request_expiry_days', 7);
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - requestExpiryDays);
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - requestExpiryDays);
 
-    const result = await this.prisma.estimateRequest.updateMany({
+    // 만료 대상 견적요청 조회 (하위 견적도 함께 처리하기 위해 개별 조회)
+    const expiredRequests = await this.prisma.estimateRequest.findMany({
       where: {
         status: 'OPEN',
-        createdAt: { lt: sevenDaysAgo },
+        createdAt: { lt: cutoffDate },
       },
+      select: {
+        id: true,
+        estimates: {
+          where: { status: 'SUBMITTED' },
+          select: { id: true, companyId: true, pointsUsed: true },
+        },
+      },
+    });
+
+    if (expiredRequests.length === 0) return;
+
+    // 견적요청 일괄 만료
+    await this.prisma.estimateRequest.updateMany({
+      where: { id: { in: expiredRequests.map((r) => r.id) } },
       data: { status: 'EXPIRED' },
     });
 
-    if (result.count > 0) {
-      this.logger.log(`견적 요청 자동 만료 처리: ${result.count}건`);
+    // 하위 SUBMITTED 견적 일괄 거절 + 포인트 전액 환불
+    const allEstimates = expiredRequests.flatMap((r) => r.estimates);
+    if (allEstimates.length > 0) {
+      await this.prisma.estimate.updateMany({
+        where: { id: { in: allEstimates.map((e) => e.id) } },
+        data: { status: 'REJECTED' },
+      });
+
+      for (const est of allEstimates) {
+        if (est.pointsUsed <= 0) continue;
+        try {
+          await this.pointService.refundPoints(
+            est.companyId,
+            est.pointsUsed,
+            `견적요청 만료에 따른 자동 환불 (${requestExpiryDays}일 초과)`,
+            est.id,
+          );
+        } catch (error) {
+          this.logger.error(
+            `견적요청 만료 환불 실패: estimateId=${est.id}, error=${error}`,
+          );
+        }
+      }
+
+      this.logger.log(
+        `견적 요청 자동 만료 처리: ${expiredRequests.length}건 (하위 견적 ${allEstimates.length}건 거절+환불)`,
+      );
+    } else {
+      this.logger.log(`견적 요청 자동 만료 처리: ${expiredRequests.length}건`);
     }
   }
 
