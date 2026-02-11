@@ -286,6 +286,18 @@ export class ChatService {
           take: 1,
           orderBy: { createdAt: 'desc' },
         },
+        matching: {
+          select: {
+            id: true,
+            status: true,
+            completionImages: true,
+            completionReportedAt: true,
+            completedAt: true,
+            review: {
+              select: { id: true },
+            },
+          },
+        },
       },
     });
 
