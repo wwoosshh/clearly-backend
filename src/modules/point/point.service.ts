@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RedisService } from '../../common/cache/redis.service';
 import {
   NOTIFICATION_EVENTS,
   NotificationEvent,
@@ -18,6 +19,7 @@ export class PointService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly redis: RedisService,
   ) {}
 
   /** 포인트 지갑 조회 (없으면 생성) */
@@ -37,12 +39,23 @@ export class PointService {
 
   /** 잔액 조회 */
   async getBalance(companyId: string) {
+    const cacheKey = `point:balance:${companyId}`;
+    const cached = await this.redis.get<any>(cacheKey);
+    if (cached) return cached;
+
     const wallet = await this.getOrCreateWallet(companyId);
-    return { balance: wallet.balance };
+    const result = { balance: wallet.balance };
+
+    await this.redis.set(cacheKey, result, 30); // 30초 캐시
+    return result;
   }
 
   /** 거래내역 조회 */
   async getTransactions(companyId: string, page = 1, limit = 20) {
+    const cacheKey = `point:txn:${companyId}:p${page}:l${limit}`;
+    const cached = await this.redis.get<any>(cacheKey);
+    if (cached) return cached;
+
     const wallet = await this.getOrCreateWallet(companyId);
 
     const [transactions, total] = await Promise.all([
@@ -57,7 +70,7 @@ export class PointService {
       }),
     ]);
 
-    return {
+    const result = {
       data: transactions,
       meta: {
         total,
@@ -66,6 +79,15 @@ export class PointService {
         totalPages: Math.ceil(total / limit),
       },
     };
+
+    await this.redis.set(cacheKey, result, 300); // 5분 캐시
+    return result;
+  }
+
+  /** 포인트 변동 시 캐시 무효화 */
+  private async invalidatePointCache(companyId: string) {
+    await this.redis.del(`point:balance:${companyId}`);
+    await this.redis.delPattern(`point:txn:${companyId}:*`);
   }
 
   /** 포인트 충전 (관리자) */
@@ -90,6 +112,8 @@ export class PointService {
         },
       }),
     ]);
+
+    await this.invalidatePointCache(companyId);
 
     this.logger.log(
       `포인트 충전: companyId=${companyId}, amount=${amount}, newBalance=${updatedWallet.balance}`,
@@ -151,6 +175,8 @@ export class PointService {
       }),
     ]);
 
+    await this.invalidatePointCache(companyId);
+
     this.logger.log(
       `포인트 사용: companyId=${companyId}, amount=${amount}, newBalance=${updatedWallet.balance}`,
     );
@@ -204,6 +230,8 @@ export class PointService {
         },
       }),
     ]);
+
+    await this.invalidatePointCache(companyId);
 
     this.logger.log(
       `포인트 환불: companyId=${companyId}, amount=${amount}, newBalance=${updatedWallet.balance}`,

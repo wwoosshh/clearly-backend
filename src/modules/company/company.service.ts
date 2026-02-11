@@ -25,6 +25,10 @@ export class CompanyService {
   }
 
   async findById(id: string) {
+    const cacheKey = `company:detail:${id}`;
+    const cached = await this.redis.get<any>(cacheKey);
+    if (cached) return cached;
+
     const company = await this.prisma.company.findUnique({
       where: { id },
       include: {
@@ -44,6 +48,7 @@ export class CompanyService {
       throw new NotFoundException('업체를 찾을 수 없습니다.');
     }
 
+    await this.redis.set(cacheKey, company, 600); // 10분 캐시
     return company;
   }
 
@@ -166,7 +171,7 @@ export class CompanyService {
     });
 
     // 캐시 무효화
-    await this.redis.del(`company:profile:${userId}`);
+    await this.redis.del(`company:profile:${userId}`, `company:detail:${id}`);
     return updated;
   }
 

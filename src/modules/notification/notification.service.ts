@@ -3,6 +3,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationGateway } from './notification.gateway';
 import { FcmService } from './fcm.service';
+import { RedisService } from '../../common/cache/redis.service';
 import {
   NOTIFICATION_EVENTS,
   NotificationEvent,
@@ -18,6 +19,7 @@ export class NotificationService {
     private readonly prisma: PrismaService,
     private readonly gateway: NotificationGateway,
     private readonly fcmService: FcmService,
+    private readonly redis: RedisService,
   ) {}
 
   async create(
@@ -48,6 +50,10 @@ export class NotificationService {
         this.logger.warn(`FCM 전송 실패 (무시): userId=${userId}, ${err}`),
       );
 
+    // 캐시 무효화
+    await this.redis.delPattern(`notification:*:${userId}:*`);
+    await this.redis.del(`notification:unread:${userId}`);
+
     this.logger.log(`알림 생성: userId=${userId}, type=${type}`);
 
     return notification;
@@ -67,6 +73,10 @@ export class NotificationService {
   }
 
   async findByUser(userId: string, page = 1, limit = 20) {
+    const cacheKey = `notification:list:${userId}:p${page}:l${limit}`;
+    const cached = await this.redis.get<any>(cacheKey);
+    if (cached) return cached;
+
     const [notifications, total, unreadCount] = await Promise.all([
       this.prisma.notification.findMany({
         where: { userId },
@@ -78,17 +88,27 @@ export class NotificationService {
       this.prisma.notification.count({ where: { userId, isRead: false } }),
     ]);
 
-    return {
+    const result = {
       data: notifications,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
       unreadCount,
     };
+
+    await this.redis.set(cacheKey, result, 60);
+    return result;
   }
 
   async getUnreadCount(userId: string): Promise<number> {
-    return this.prisma.notification.count({
+    const cacheKey = `notification:unread:${userId}`;
+    const cached = await this.redis.get<number>(cacheKey);
+    if (cached !== null) return cached;
+
+    const count = await this.prisma.notification.count({
       where: { userId, isRead: false },
     });
+
+    await this.redis.set(cacheKey, count, 30);
+    return count;
   }
 
   async markAsRead(id: string, userId: string) {
@@ -96,6 +116,10 @@ export class NotificationService {
       where: { id, userId },
       data: { isRead: true },
     });
+
+    await this.redis.delPattern(`notification:*:${userId}:*`);
+    await this.redis.del(`notification:unread:${userId}`);
+
     return { success: notification.count > 0 };
   }
 
@@ -104,6 +128,10 @@ export class NotificationService {
       where: { userId, isRead: false },
       data: { isRead: true },
     });
+
+    await this.redis.delPattern(`notification:*:${userId}:*`);
+    await this.redis.del(`notification:unread:${userId}`);
+
     return { count: result.count };
   }
 

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RedisService } from '../../common/cache/redis.service';
 import { CreateReviewDto } from './dto/create-review.dto';
 import {
   NOTIFICATION_EVENTS,
@@ -20,6 +21,7 @@ export class ReviewService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly redis: RedisService,
   ) {}
 
   /** 리뷰 작성 */
@@ -97,6 +99,9 @@ export class ReviewService {
       data: { averageRating: newAvg, totalReviews: newCount },
     });
 
+    // 리뷰 캐시 무효화
+    await this.redis.delPattern(`review:company:${matching.companyId}:*`);
+
     this.logger.log(
       `리뷰 작성: id=${review.id}, matchingId=${dto.matchingId}, rating=${dto.rating}`,
     );
@@ -128,6 +133,10 @@ export class ReviewService {
 
   /** 업체 리뷰 목록 */
   async findByCompany(companyId: string, page = 1, limit = 10) {
+    const cacheKey = `review:company:${companyId}:p${page}:l${limit}`;
+    const cached = await this.redis.get<any>(cacheKey);
+    if (cached) return cached;
+
     const where = { companyId, isVisible: true };
 
     const [reviews, total] = await Promise.all([
@@ -152,10 +161,13 @@ export class ReviewService {
       this.prisma.review.count({ where }),
     ]);
 
-    return {
+    const result = {
       data: reviews,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
+
+    await this.redis.set(cacheKey, result, 600); // 10분 캐시
+    return result;
   }
 
   /** 리뷰 상세 */
@@ -285,6 +297,8 @@ export class ReviewService {
       },
     });
 
+    await this.redis.delPattern(`review:company:${review.companyId}:*`);
+
     // 평점 갱신 (증분 계산)
     if (data.rating !== undefined && data.rating !== review.rating) {
       const companyData = await this.prisma.company.findUnique({
@@ -328,13 +342,16 @@ export class ReviewService {
       throw new BadRequestException('이미 답글이 작성된 리뷰입니다.');
     }
 
-    return this.prisma.review.update({
+    const updated = await this.prisma.review.update({
       where: { id: reviewId },
       data: {
         companyReply: reply,
         companyRepliedAt: new Date(),
       },
     });
+
+    await this.redis.delPattern(`review:company:${review.companyId}:*`);
+    return updated;
   }
 
   /** 도움이 됐어요 투표 */
@@ -347,10 +364,13 @@ export class ReviewService {
       throw new NotFoundException('리뷰를 찾을 수 없습니다.');
     }
 
-    return this.prisma.review.update({
+    const updated = await this.prisma.review.update({
       where: { id: reviewId },
       data: { helpfulCount: { increment: 1 } },
     });
+
+    await this.redis.delPattern(`review:company:${review.companyId}:*`);
+    return updated;
   }
 
   /** 리뷰 삭제 */
@@ -366,6 +386,8 @@ export class ReviewService {
     }
 
     await this.prisma.review.delete({ where: { id } });
+
+    await this.redis.delPattern(`review:company:${review.companyId}:*`);
 
     // 평점 갱신 (증분 계산)
     const companyData = await this.prisma.company.findUnique({

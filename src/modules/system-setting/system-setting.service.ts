@@ -1,5 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RedisService } from '../../common/cache/redis.service';
+
+const SETTINGS_CACHE_KEY = 'system:settings';
+const SETTINGS_TTL = 600; // 10분
 
 const DEFAULT_SETTINGS: Record<string, { value: any; description: string }> = {
   estimate_point_cost: { value: 50, description: '견적 제출 포인트 비용' },
@@ -22,7 +26,10 @@ export class SystemSettingService implements OnModuleInit {
   private readonly logger = new Logger(SystemSettingService.name);
   private cache = new Map<string, any>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
   async onModuleInit() {
     await this.seedDefaults();
@@ -32,13 +39,19 @@ export class SystemSettingService implements OnModuleInit {
   async loadAll(): Promise<void> {
     const settings = await this.prisma.systemSetting.findMany();
     this.cache.clear();
+    const redisMap: Record<string, any> = {};
     for (const s of settings) {
       try {
-        this.cache.set(s.key, JSON.parse(s.value));
+        const parsed = JSON.parse(s.value);
+        this.cache.set(s.key, parsed);
+        redisMap[s.key] = parsed;
       } catch {
         this.cache.set(s.key, s.value);
+        redisMap[s.key] = s.value;
       }
     }
+    // Redis에도 동기화
+    await this.redis.set(SETTINGS_CACHE_KEY, redisMap, SETTINGS_TTL);
     this.logger.log(`시스템 설정 로드 완료: ${this.cache.size}개`);
   }
 
@@ -57,6 +70,8 @@ export class SystemSettingService implements OnModuleInit {
       create: { key, value: stringValue, description },
     });
     this.cache.set(key, value);
+    // Redis 캐시 무효화 (다른 인스턴스에서도 재로드하도록)
+    await this.redis.del(SETTINGS_CACHE_KEY);
   }
 
   async getAll(): Promise<Record<string, any>> {

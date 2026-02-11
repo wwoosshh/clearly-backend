@@ -9,6 +9,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PointService } from '../point/point.service';
 import { ChatService } from '../chat/chat.service';
+import { RedisService } from '../../common/cache/redis.service';
 import { CreateEstimateRequestDto } from './dto/create-estimate-request.dto';
 import { SubmitEstimateDto } from './dto/submit-estimate.dto';
 import {
@@ -28,6 +29,7 @@ export class EstimateService {
     private readonly chatService: ChatService,
     private readonly eventEmitter: EventEmitter2,
     private readonly settings: SystemSettingService,
+    private readonly redis: RedisService,
   ) {}
 
   /** 견적요청 생성 (USER) */
@@ -640,6 +642,11 @@ export class EstimateService {
   ) {
     const areaBucket = areaSize ? this.getAreaBucket(areaSize) : null;
 
+    // Redis 캐시 (1시간)
+    const cacheKey = `estimate:price:${cleaningType}:${areaBucket ? `${areaBucket.min}-${areaBucket.max}` : 'all'}:${address ?? 'all'}`;
+    const cached = await this.redis.get<any>(cacheKey);
+    if (cached) return cached;
+
     // 1차: cleaningType + areaSize 구간 + 지역으로 조회
     const baseWhere: any = {
       status: 'COMPLETED',
@@ -700,12 +707,15 @@ export class EstimateService {
       });
     }
 
-    return {
+    const priceResult = {
       minPrice: result._min.estimatedPrice ?? 0,
       avgPrice: Math.round(result._avg.estimatedPrice ?? 0),
       maxPrice: result._max.estimatedPrice ?? 0,
       sampleCount: result._count.id,
     };
+
+    await this.redis.set(cacheKey, priceResult, 3600); // 1시간 캐시
+    return priceResult;
   }
 
   private getAreaBucket(areaSize: number): { min: number; max: number } {

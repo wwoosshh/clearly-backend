@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RedisService } from '../../common/cache/redis.service';
 import {
   NOTIFICATION_EVENTS,
   NotificationEvent,
@@ -19,6 +20,7 @@ export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly redis: RedisService,
   ) {}
 
   /** 채팅방 생성 (채팅상담 직접 클릭 시) */
@@ -120,6 +122,9 @@ export class ChatService {
         },
       }),
     ]);
+
+    // 채팅방 목록 캐시 무효화 (양쪽 유저)
+    await this.redis.del(`chat:rooms:${senderId}`, `chat:rooms:${room.company.userId === senderId ? room.userId : room.company.userId}`);
 
     // 첫 번째 비시스템 메시지인 경우 상대방에게 알림
     if (messageType !== 'SYSTEM') {
@@ -247,6 +252,10 @@ export class ChatService {
 
   /** 사용자 채팅방 목록 조회 */
   async getUserRooms(userId: string) {
+    const cacheKey = `chat:rooms:${userId}`;
+    const cached = await this.redis.get<any>(cacheKey);
+    if (cached) return cached;
+
     // 사용자가 일반 유저인지 업체 유저인지 확인
     const company = await this.prisma.company.findUnique({
       where: { userId },
@@ -299,10 +308,13 @@ export class ChatService {
       unreadCounts.map((u) => [u.roomId, u._count.id]),
     );
 
-    return rooms.map((room) => ({
+    const result = rooms.map((room) => ({
       ...room,
       unreadCount: unreadMap.get(room.id) ?? 0,
     }));
+
+    await this.redis.set(cacheKey, result, 30); // 30초 캐시
+    return result;
   }
 
   /** 메시지 읽음 처리 */
@@ -325,6 +337,8 @@ export class ChatService {
       },
       data: { isRead: true },
     });
+
+    await this.redis.del(`chat:rooms:${userId}`);
 
     return { count: result.count };
   }
