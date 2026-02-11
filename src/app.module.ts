@@ -25,6 +25,7 @@ import { InquiryModule } from './modules/inquiry/inquiry.module';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
 import { HealthModule } from './modules/health/health.module';
 import { SystemSettingModule } from './modules/system-setting/system-setting.module';
+import { RedisModule } from './common/cache/redis.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { SystemSettingModule } from './modules/system-setting/system-setting.mod
     ]),
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
+    RedisModule,
     SystemSettingModule,
     PrismaModule,
     AuthModule,

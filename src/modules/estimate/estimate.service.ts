@@ -87,12 +87,33 @@ export class EstimateService {
 
     this.logger.log(`견적요청 생성: id=${request.id}, userId=${userId}`);
 
-    // 지역 + 전문분야 기반 타겟 업체 필터링
-    const allApprovedCompanies = await this.prisma.company.findMany({
-      where: {
-        isActive: true,
-        verificationStatus: 'APPROVED',
-      },
+    // 지역 + 전문분야 기반 타겟 업체 필터링 (DB 레벨)
+    const reqLat = dto.latitude ?? (request as any).latitude;
+    const reqLng = dto.longitude ?? (request as any).longitude;
+
+    const baseWhere: any = {
+      isActive: true,
+      verificationStatus: 'APPROVED',
+    };
+
+    // 좌표가 있으면 사각 범위(bounding box)로 DB에서 사전 필터링
+    if (reqLat && reqLng) {
+      const maxRangeKm = 50; // 최대 서비스 범위
+      const latDelta = maxRangeKm / 111; // 위도 1도 ≈ 111km
+      const lngDelta =
+        maxRangeKm / (111 * Math.cos((Number(reqLat) * Math.PI) / 180));
+      baseWhere.latitude = {
+        gte: Number(reqLat) - latDelta,
+        lte: Number(reqLat) + latDelta,
+      };
+      baseWhere.longitude = {
+        gte: Number(reqLng) - lngDelta,
+        lte: Number(reqLng) + lngDelta,
+      };
+    }
+
+    const candidates = await this.prisma.company.findMany({
+      where: baseWhere,
       select: {
         userId: true,
         serviceAreas: true,
@@ -104,21 +125,16 @@ export class EstimateService {
       },
     });
 
-    const reqLat = dto.latitude ?? (request as any).latitude;
-    const reqLng = dto.longitude ?? (request as any).longitude;
-
-    // 견적 요청의 지역/전문분야와 매칭되는 업체만 필터링
-    const matchingCompanies = allApprovedCompanies.filter((company) => {
-      // 전문분야 매칭
+    // 전문분야 + 정밀 거리 필터 (메모리 내 최소한의 필터링)
+    const matchingCompanies = candidates.filter((company) => {
       const specs = Array.isArray(company.specialties)
         ? (company.specialties as string[])
         : [];
       const hasSpecialty =
         specs.length === 0 || specs.some((s) => s === dto.cleaningType);
-
       if (!hasSpecialty) return false;
 
-      // 거리 기반 매칭 (좌표가 있는 경우 우선 사용)
+      // 정밀 거리 검증 (bounding box로 걸러진 후보만)
       if (reqLat && reqLng && company.latitude && company.longitude) {
         const dist = this.haversineKm(
           Number(reqLat),
@@ -126,7 +142,7 @@ export class EstimateService {
           Number(company.latitude),
           Number(company.longitude),
         );
-        const maxRange = company.serviceRange ?? 50; // 기본 50km
+        const maxRange = company.serviceRange ?? 50;
         return dist <= maxRange;
       }
 

@@ -458,17 +458,16 @@ export class ChatService {
     // 24시간 초과 응답은 통계에서 제외 (비정상 케이스)
     if (responseMinutes > 1440) return;
 
-    // 이 업체가 응답한 총 채팅방 수 (현재 포함)
-    const respondedRooms = await this.prisma.chatMessage.findMany({
+    // 이 업체가 응답한 총 채팅방 수 (현재 포함) - groupBy로 DB 레벨에서 집계
+    const respondedRoomCounts = await this.prisma.chatMessage.groupBy({
+      by: ['roomId'],
       where: {
         senderId: companyUserId,
         messageType: { not: 'SYSTEM' },
         room: { companyId },
       },
-      select: { roomId: true },
-      distinct: ['roomId'],
     });
-    const totalResponses = respondedRooms.length;
+    const totalResponses = respondedRoomCounts.length;
 
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },

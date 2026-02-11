@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
+import { RedisService } from '../../common/cache/redis.service';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { SearchCompanyDto, SortBy } from './dto/search-company.dto';
 
@@ -16,6 +17,7 @@ export class CompanyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly geocodingService: GeocodingService,
+    private readonly redis: RedisService,
   ) {}
 
   async create(data: any) {
@@ -46,6 +48,11 @@ export class CompanyService {
   }
 
   async getMyCompany(userId: string) {
+    // Redis 캐시 확인 (TTL 5분)
+    const cacheKey = `company:profile:${userId}`;
+    const cached = await this.redis.get<any>(cacheKey);
+    if (cached) return cached;
+
     const company = await this.prisma.company.findUnique({
       where: { userId },
       include: {
@@ -65,6 +72,7 @@ export class CompanyService {
       throw new NotFoundException('등록된 업체 정보가 없습니다.');
     }
 
+    await this.redis.set(cacheKey, company, 300); // 5분 캐시
     return company;
   }
 
@@ -152,10 +160,14 @@ export class CompanyService {
       }
     }
 
-    return this.prisma.company.update({
+    const updated = await this.prisma.company.update({
       where: { id },
       data: updateData,
     });
+
+    // 캐시 무효화
+    await this.redis.del(`company:profile:${userId}`);
+    return updated;
   }
 
   async updateApprovalStatus(id: string, status: string) {
@@ -214,6 +226,21 @@ export class CompanyService {
         { businessName: { contains: keyword, mode: 'insensitive' } },
         { description: { contains: keyword, mode: 'insensitive' } },
       ];
+    }
+
+    // 위치 기반 bounding box 사전 필터링 (DB 레벨)
+    if (latitude != null && longitude != null) {
+      const latDelta = maxDistance / 111;
+      const lngDelta =
+        maxDistance / (111 * Math.cos((latitude * Math.PI) / 180));
+      whereConditions.latitude = {
+        gte: latitude - latDelta,
+        lte: latitude + latDelta,
+      };
+      whereConditions.longitude = {
+        gte: longitude - lngDelta,
+        lte: longitude + lngDelta,
+      };
     }
 
     const companies = await this.prisma.company.findMany({

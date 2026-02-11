@@ -457,6 +457,7 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead, createdAt(sort: Desc)])
+  @@index([type])
   @@map("notifications")
 }
 
@@ -563,6 +564,7 @@ model PointTransaction {
   wallet PointWallet @relation(fields: [walletId], references: [id])
 
   @@index([walletId, createdAt(sort: Desc)])
+  @@index([createdAt])
   @@map("point_transactions")
 }
 

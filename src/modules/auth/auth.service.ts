@@ -23,6 +23,7 @@ import { NaverLoginDto } from './dto/naver-login.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { RedisService } from '../../common/cache/redis.service';
 
 @Injectable()
 export class AuthService {
@@ -35,6 +36,7 @@ export class AuthService {
     private readonly httpService: HttpService,
     private readonly geocodingService: GeocodingService,
     private readonly mailService: MailService,
+    private readonly redis: RedisService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -61,7 +63,9 @@ export class AuthService {
       },
     });
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    const tokens = await this.generateTokens(user.id, user.email, user.role, {
+      name: user.name,
+    });
 
     return {
       user: {
@@ -201,7 +205,10 @@ export class AuthService {
       },
     });
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    const tokens = await this.generateTokens(user.id, user.email, user.role, {
+      name: user.name,
+      companyId: (user as any).company?.id,
+    });
 
     return {
       user: {
@@ -230,18 +237,21 @@ export class AuthService {
           'default-refresh-secret',
       });
 
-      // DB에서 토큰 조회
+      // DB에서 토큰 + 유저를 단일 쿼리로 조회
       const storedToken = await this.prisma.refreshToken.findUnique({
         where: { token: refreshToken },
+        include: {
+          user: {
+            include: { company: { select: { id: true } } },
+          },
+        },
       });
 
       if (!storedToken || storedToken.expiresAt < new Date()) {
         throw new UnauthorizedException('유효하지 않은 리프레시 토큰입니다.');
       }
 
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-      });
+      const user = storedToken.user;
 
       if (!user || !user.isActive) {
         throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
@@ -252,7 +262,10 @@ export class AuthService {
         where: { id: storedToken.id },
       });
 
-      return this.generateTokens(user.id, user.email, user.role);
+      return this.generateTokens(user.id, user.email, user.role, {
+        name: user.name,
+        companyId: user.company?.id,
+      });
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         throw error;
@@ -264,6 +277,7 @@ export class AuthService {
   async validateUser(email: string, password: string) {
     const user = await this.prisma.user.findUnique({
       where: { email },
+      include: { company: { select: { id: true } } },
     });
 
     if (!user || !user.passwordHash) {
@@ -288,6 +302,11 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
+    // Redis 캐시 확인 (TTL 5분)
+    const cacheKey = `user:profile:${userId}`;
+    const cached = await this.redis.get<any>(cacheKey);
+    if (cached) return cached;
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -305,6 +324,7 @@ export class AuthService {
       throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
     }
 
+    await this.redis.set(cacheKey, user, 300); // 5분 캐시
     return user;
   }
 
@@ -604,7 +624,9 @@ export class AuthService {
       throw new ForbiddenException('비활성화된 계정입니다.');
     }
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    const tokens = await this.generateTokens(user.id, user.email, user.role, {
+      name: user.name,
+    });
 
     return {
       user: {
@@ -618,8 +640,15 @@ export class AuthService {
     };
   }
 
-  private async generateTokens(userId: string, email: string, role: string) {
-    const payload = { sub: userId, email, role };
+  private async generateTokens(
+    userId: string,
+    email: string,
+    role: string,
+    extra?: { name?: string; companyId?: string | null },
+  ) {
+    const payload: Record<string, unknown> = { sub: userId, email, role };
+    if (extra?.name) payload.name = extra.name;
+    if (extra?.companyId) payload.companyId = extra.companyId;
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
