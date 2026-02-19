@@ -361,9 +361,9 @@ export class SubscriptionService {
     return this.getActiveSubscription(companyId);
   }
 
-  /** 구독 스택 조회 (ACTIVE + PAUSED + QUEUED) */
+  /** 구독 스택 조회 (ACTIVE + PAUSED + QUEUED) + 예상 종료일 계산 */
   async getSubscriptionStack(companyId: string) {
-    return this.prisma.companySubscription.findMany({
+    const stack = await this.prisma.companySubscription.findMany({
       where: {
         companyId,
         status: { in: ['ACTIVE', 'PAUSED', 'QUEUED'] },
@@ -371,6 +371,50 @@ export class SubscriptionService {
       include: { plan: true },
       orderBy: { plan: { priorityWeight: 'desc' } },
     });
+
+    // ACTIVE 구독의 종료일을 기준으로 PAUSED/QUEUED의 예상 종료일 계산
+    const active = stack.find((s) => s.status === 'ACTIVE');
+    if (!active) {
+      return stack.map((s) => ({ ...s, projectedEnd: s.currentPeriodEnd }));
+    }
+
+    // 만료 시 재개 순서: PAUSED(우선순위 높은 순) → QUEUED(우선순위 높은 순)
+    const pausedSubs = stack
+      .filter((s) => s.status === 'PAUSED')
+      .sort((a, b) => Number(b.plan.priorityWeight) - Number(a.plan.priorityWeight));
+    const queuedSubs = stack
+      .filter((s) => s.status === 'QUEUED')
+      .sort((a, b) => Number(b.plan.priorityWeight) - Number(a.plan.priorityWeight));
+
+    const projectedMap = new Map<string, Date>();
+    projectedMap.set(active.id, active.currentPeriodEnd);
+
+    let cursor = active.currentPeriodEnd;
+
+    // PAUSED: 남은 기간(currentPeriodEnd - pausedAt)을 cursor 이후에 이어붙임
+    for (const p of pausedSubs) {
+      if (p.pausedAt) {
+        const remainingMs = p.currentPeriodEnd.getTime() - p.pausedAt.getTime();
+        const projEnd = new Date(cursor.getTime() + Math.max(0, remainingMs));
+        projectedMap.set(p.id, projEnd);
+        cursor = projEnd;
+      } else {
+        projectedMap.set(p.id, p.currentPeriodEnd);
+      }
+    }
+
+    // QUEUED: cursor 시점부터 plan.durationMonths만큼 새 기간
+    for (const q of queuedSubs) {
+      const projEnd = new Date(cursor);
+      projEnd.setMonth(projEnd.getMonth() + q.plan.durationMonths);
+      projectedMap.set(q.id, projEnd);
+      cursor = projEnd;
+    }
+
+    return stack.map((s) => ({
+      ...s,
+      projectedEnd: projectedMap.get(s.id) ?? s.currentPeriodEnd,
+    }));
   }
 
   /** 구독 이력 조회 */
