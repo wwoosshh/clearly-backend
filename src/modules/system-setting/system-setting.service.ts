@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS: Record<string, { value: any; description: string }> = {
   basic_daily_estimate_limit: { value: 3, description: 'Basic 일일 견적 한도' },
   pro_daily_estimate_limit: { value: 10, description: 'Pro 일일 견적 한도' },
   premium_daily_estimate_limit: { value: 50, description: 'Premium 일일 견적 한도' },
+  payment_bank_account: { value: '', description: '결제 입금 계좌 정보' },
 };
 
 @Injectable()
