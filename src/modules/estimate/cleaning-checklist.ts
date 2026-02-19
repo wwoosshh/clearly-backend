@@ -83,20 +83,6 @@ export const CLEANING_CHECKLISTS: Record<string, ChecklistTemplate> = {
       { key: 'trash', label: '쓰레기/폐기물 처리', required: true },
     ],
   },
-  CONSTRUCTION: {
-    cleaningType: 'CONSTRUCTION',
-    label: '준공 청소',
-    items: [
-      { key: 'dust', label: '분진/먼지 제거', required: true },
-      { key: 'floor', label: '바닥 청소 (시멘트/접착제 제거)', required: true },
-      { key: 'window', label: '창문/유리 청소 (스티커 제거)', required: true },
-      { key: 'bathroom', label: '화장실 청소', required: true },
-      { key: 'kitchen', label: '주방 청소', required: true },
-      { key: 'veranda', label: '베란다 청소', required: true },
-      { key: 'paint', label: '페인트 자국 제거', required: false },
-      { key: 'entrance', label: '현관/복도 청소', required: true },
-    ],
-  },
   AIRCON: {
     cleaningType: 'AIRCON',
     label: '에어컨 청소',

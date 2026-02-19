@@ -46,7 +46,6 @@ enum CleaningType {
   FULL
   OFFICE
   STORE
-  CONSTRUCTION
   AIRCON
   CARPET
   EXTERIOR
