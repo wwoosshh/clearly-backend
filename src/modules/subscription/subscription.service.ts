@@ -372,10 +372,14 @@ export class SubscriptionService {
       orderBy: { plan: { priorityWeight: 'desc' } },
     });
 
-    // ACTIVE 구독의 종료일을 기준으로 PAUSED/QUEUED의 예상 종료일 계산
+    // ACTIVE 구독의 종료일을 기준으로 PAUSED/QUEUED의 예상 시작일/종료일 계산
     const active = stack.find((s) => s.status === 'ACTIVE');
     if (!active) {
-      return stack.map((s) => ({ ...s, projectedEnd: s.currentPeriodEnd }));
+      return stack.map((s) => ({
+        ...s,
+        projectedStart: s.currentPeriodStart,
+        projectedEnd: s.currentPeriodEnd,
+      }));
     }
 
     // 만료 시 재개 순서: PAUSED(우선순위 높은 순) → QUEUED(우선순위 높은 순)
@@ -386,34 +390,40 @@ export class SubscriptionService {
       .filter((s) => s.status === 'QUEUED')
       .sort((a, b) => Number(b.plan.priorityWeight) - Number(a.plan.priorityWeight));
 
-    const projectedMap = new Map<string, Date>();
-    projectedMap.set(active.id, active.currentPeriodEnd);
+    const projStartMap = new Map<string, Date>();
+    const projEndMap = new Map<string, Date>();
+
+    projStartMap.set(active.id, active.currentPeriodStart);
+    projEndMap.set(active.id, active.currentPeriodEnd);
 
     let cursor = active.currentPeriodEnd;
 
-    // PAUSED: 남은 기간(currentPeriodEnd - pausedAt)을 cursor 이후에 이어붙임
+    // PAUSED: cursor부터 남은 기간(currentPeriodEnd - pausedAt)만큼 이어붙임
     for (const p of pausedSubs) {
+      projStartMap.set(p.id, cursor);
       if (p.pausedAt) {
         const remainingMs = p.currentPeriodEnd.getTime() - p.pausedAt.getTime();
         const projEnd = new Date(cursor.getTime() + Math.max(0, remainingMs));
-        projectedMap.set(p.id, projEnd);
+        projEndMap.set(p.id, projEnd);
         cursor = projEnd;
       } else {
-        projectedMap.set(p.id, p.currentPeriodEnd);
+        projEndMap.set(p.id, p.currentPeriodEnd);
       }
     }
 
-    // QUEUED: cursor 시점부터 plan.durationMonths만큼 새 기간
+    // QUEUED: cursor부터 plan.durationMonths만큼 새 기간
     for (const q of queuedSubs) {
+      projStartMap.set(q.id, cursor);
       const projEnd = new Date(cursor);
       projEnd.setMonth(projEnd.getMonth() + q.plan.durationMonths);
-      projectedMap.set(q.id, projEnd);
+      projEndMap.set(q.id, projEnd);
       cursor = projEnd;
     }
 
     return stack.map((s) => ({
       ...s,
-      projectedEnd: projectedMap.get(s.id) ?? s.currentPeriodEnd,
+      projectedStart: projStartMap.get(s.id) ?? s.currentPeriodStart,
+      projectedEnd: projEndMap.get(s.id) ?? s.currentPeriodEnd,
     }));
   }
 
