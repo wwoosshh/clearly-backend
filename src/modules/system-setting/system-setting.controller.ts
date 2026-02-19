@@ -8,6 +8,6 @@ export class SystemSettingController {
   @Get('payment-bank-account')
   getPaymentBankAccount() {
     const value = this.settingService.get<string>('payment_bank_account', '');
-    return { data: value || null };
+    return value || null;
   }
 }
