@@ -17,7 +17,6 @@ import { SubscriptionModule } from './modules/subscription/subscription.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { UploadModule } from './modules/upload/upload.module';
-import { PointModule } from './modules/point/point.module';
 import { EstimateModule } from './modules/estimate/estimate.module';
 import { ReportModule } from './modules/report/report.module';
 import { FaqModule } from './modules/faq/faq.module';
@@ -55,7 +54,6 @@ import { RedisModule } from './common/cache/redis.module';
     NotificationModule,
     AdminModule,
     UploadModule,
-    PointModule,
     EstimateModule,
     ReportModule,
     FaqModule,

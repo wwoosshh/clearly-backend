@@ -18,7 +18,9 @@ import { Throttle } from '@nestjs/throttler';
 import { EstimateService } from './estimate.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { SubscriptionGuard } from '../auth/guards/subscription.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { RequireSubscription } from '../../common/decorators/subscription.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CreateEstimateRequestDto } from './dto/create-estimate-request.dto';
 import { SubmitEstimateDto } from './dto/submit-estimate.dto';
@@ -83,6 +85,8 @@ export class EstimateController {
   }
 
   @Get('requests')
+  @UseGuards(SubscriptionGuard)
+  @RequireSubscription('BASIC')
   @ApiOperation({ summary: '견적요청 목록' })
   @ApiResponse({ status: 200, description: '견적요청 목록 조회 성공' })
   async getEstimateRequests(
@@ -107,9 +111,10 @@ export class EstimateController {
 
   @Post('requests/:id/submit')
   @Throttle({ default: { ttl: 3600000, limit: 10 } })
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, SubscriptionGuard)
   @Roles('COMPANY')
-  @ApiOperation({ summary: '견적 제출 (포인트 차감)' })
+  @RequireSubscription('BASIC')
+  @ApiOperation({ summary: '견적 제출' })
   @ApiResponse({ status: 201, description: '견적 제출 성공' })
   async submitEstimate(
     @CurrentUser('id') userId: string,
@@ -133,8 +138,9 @@ export class EstimateController {
   }
 
   @Get('company-estimates')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, SubscriptionGuard)
   @Roles('COMPANY')
+  @RequireSubscription('BASIC')
   @ApiOperation({ summary: '업체가 제출한 견적 목록' })
   @ApiResponse({ status: 200, description: '제출 견적 목록 조회 성공' })
   async getCompanyEstimates(

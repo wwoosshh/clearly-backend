@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PointService } from '../point/point.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 import { ChatService } from '../chat/chat.service';
 import { RedisService } from '../../common/cache/redis.service';
 import { CreateEstimateRequestDto } from './dto/create-estimate-request.dto';
@@ -25,7 +25,7 @@ export class EstimateService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly pointService: PointService,
+    private readonly subscriptionService: SubscriptionService,
     private readonly chatService: ChatService,
     private readonly eventEmitter: EventEmitter2,
     private readonly settings: SystemSettingService,
@@ -257,7 +257,7 @@ export class EstimateService {
     return request;
   }
 
-  /** 견적 제출 (COMPANY, 포인트 차감) */
+  /** 견적 제출 (COMPANY, 일일 한도 차감) */
   async submitEstimate(
     userId: string,
     estimateRequestId: string,
@@ -303,14 +303,20 @@ export class EstimateService {
       );
     }
 
-    // 포인트 차감
-    const pointCost = this.settings.get('estimate_point_cost', 50);
-    await this.pointService.usePoints(
+    // 일일 견적 한도 확인
+    const limitInfo = await this.subscriptionService.canSubmitEstimate(
       company.id,
-      pointCost,
-      '견적 제출',
-      estimateRequestId,
     );
+    if (limitInfo.limit === 0) {
+      throw new BadRequestException(
+        '구독이 필요합니다. 가입비를 결제해주세요.',
+      );
+    }
+    if (limitInfo.remaining <= 0) {
+      throw new BadRequestException(
+        `오늘의 견적 제출 한도(${limitInfo.limit}건)를 초과했습니다.`,
+      );
+    }
 
     // 견적 생성
     const estimate = await this.prisma.estimate.create({
@@ -323,7 +329,6 @@ export class EstimateService {
         availableDate: dto.availableDate
           ? new Date(dto.availableDate)
           : undefined,
-        pointsUsed: pointCost,
         images: dto.images,
       },
       include: {
@@ -335,6 +340,9 @@ export class EstimateService {
         },
       },
     });
+
+    // 일일 카운터 증가
+    await this.subscriptionService.incrementEstimateCount(company.id);
 
     this.logger.log(
       `견적 제출: id=${estimate.id}, companyId=${company.id}, requestId=${estimateRequestId}`,
@@ -457,14 +465,14 @@ export class EstimateService {
         data: { status: 'ACCEPTED' },
       });
 
-      // 2. 같은 요청의 다른 견적 거절 처리 + 50% 포인트 환불
+      // 2. 같은 요청의 다른 견적 거절 처리
       const otherEstimates = await tx.estimate.findMany({
         where: {
           estimateRequestId: estimate.estimateRequestId,
           id: { not: estimateId },
           status: 'SUBMITTED',
         },
-        select: { id: true, companyId: true, pointsUsed: true },
+        select: { id: true, companyId: true },
       });
 
       if (otherEstimates.length > 0) {
@@ -474,9 +482,6 @@ export class EstimateService {
           },
           data: { status: 'REJECTED' },
         });
-
-        // 자동 거절된 견적에 대해 50% 포인트 환불 (트랜잭션 외부에서 처리)
-        this.refundAutoRejectedEstimates(otherEstimates);
       }
 
       // 3. 매칭 생성
@@ -587,35 +592,6 @@ export class EstimateService {
     );
 
     return updated;
-  }
-
-  /** 자동 거절된 견적에 대한 50% 포인트 환불 (비동기) */
-  private async refundAutoRejectedEstimates(
-    estimates: Array<{ id: string; companyId: string; pointsUsed: number }>,
-  ) {
-    for (const est of estimates) {
-      if (est.pointsUsed <= 0) continue;
-      const rawRate = this.settings.get('auto_refund_rate', 50);
-      const refundRate = Math.min(100, Math.max(0, rawRate)) / 100;
-      const refundAmount = Math.floor(est.pointsUsed * refundRate);
-      if (refundAmount <= 0) continue;
-
-      try {
-        await this.pointService.refundPoints(
-          est.companyId,
-          refundAmount,
-          '타 견적 수락에 따른 자동 거절 환불 (50%)',
-          est.id,
-        );
-        this.logger.log(
-          `자동 거절 환불: estimateId=${est.id}, companyId=${est.companyId}, refund=${refundAmount}P`,
-        );
-      } catch (error) {
-        this.logger.error(
-          `자동 거절 환불 실패: estimateId=${est.id}, error=${error}`,
-        );
-      }
-    }
   }
 
   /** Haversine 거리 계산 (km) */

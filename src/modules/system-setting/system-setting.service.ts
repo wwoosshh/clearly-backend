@@ -6,13 +6,15 @@ const SETTINGS_CACHE_KEY = 'system:settings';
 const SETTINGS_TTL = 600; // 10분
 
 const DEFAULT_SETTINGS: Record<string, { value: any; description: string }> = {
-  estimate_point_cost: { value: 50, description: '견적 제출 포인트 비용' },
-  welcome_point_amount: { value: 500, description: '신규 업체 환영 포인트' },
   max_concurrent_requests: { value: 3, description: '동시 견적요청 제한' },
   estimate_expiry_days: { value: 3, description: '견적 만료 일수' },
   request_expiry_days: { value: 7, description: '견적요청 만료 일수' },
   auto_complete_hours: { value: 48, description: '완료보고 자동확정 시간' },
-  auto_refund_rate: { value: 50, description: '자동거절 환불율 (%)' },
+  free_trial_months: { value: 3, description: '무료 체험 기간 (개월)' },
+  subscription_expiry_warning_days: { value: 7, description: '구독 만료 알림 일수' },
+  basic_daily_estimate_limit: { value: 3, description: 'Basic 일일 견적 한도' },
+  pro_daily_estimate_limit: { value: 10, description: 'Pro 일일 견적 한도' },
+  premium_daily_estimate_limit: { value: 50, description: 'Premium 일일 견적 한도' },
   tier_certified_min_rating: { value: 3.5, description: '인증등급 최소 평점' },
   tier_certified_min_reviews: { value: 3, description: '인증등급 최소 리뷰' },
   tier_premium_min_rating: { value: 4.0, description: '프리미엄 최소 평점' },

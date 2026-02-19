@@ -7,13 +7,13 @@ import {
 } from '@nestjs/common';
 import { EstimateService } from './estimate.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PointService } from '../point/point.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 import { ChatService } from '../chat/chat.service';
 
 describe('EstimateService', () => {
   let service: EstimateService;
   let prisma: any;
-  let pointService: any;
+  let subscriptionService: any;
   let chatService: any;
   let eventEmitter: any;
 
@@ -48,7 +48,6 @@ describe('EstimateService', () => {
     price: 250000,
     message: '깔끔하게 해드리겠습니다',
     estimatedDuration: '3시간',
-    pointsUsed: 50,
     status: 'SUBMITTED',
     estimateRequest: mockEstimateRequest,
     company: mockCompany,
@@ -92,10 +91,15 @@ describe('EstimateService', () => {
           },
         },
         {
-          provide: PointService,
+          provide: SubscriptionService,
           useValue: {
-            usePoints: jest.fn().mockResolvedValue(undefined),
-            refundPoints: jest.fn().mockResolvedValue(undefined),
+            canSubmitEstimate: jest.fn().mockResolvedValue({
+              canSubmit: true,
+              used: 0,
+              limit: 3,
+              remaining: 3,
+            }),
+            incrementEstimateCount: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
@@ -115,7 +119,7 @@ describe('EstimateService', () => {
 
     service = module.get<EstimateService>(EstimateService);
     prisma = module.get(PrismaService);
-    pointService = module.get(PointService);
+    subscriptionService = module.get(SubscriptionService);
     chatService = module.get(ChatService);
     eventEmitter = module.get(EventEmitter2);
   });
@@ -197,7 +201,7 @@ describe('EstimateService', () => {
       estimatedDuration: '3시간',
     };
 
-    it('견적 제출 성공 (50P 차감)', async () => {
+    it('견적 제출 성공 (일일 한도 확인)', async () => {
       prisma.company.findUnique.mockResolvedValue(mockCompany);
       prisma.estimateRequest.findUnique.mockResolvedValue(mockEstimateRequest);
       prisma.estimate.findFirst.mockResolvedValue(null);
@@ -219,16 +223,33 @@ describe('EstimateService', () => {
       );
 
       expect(result.price).toBe(250000);
-      expect(pointService.usePoints).toHaveBeenCalledWith(
+      expect(subscriptionService.canSubmitEstimate).toHaveBeenCalledWith(
         mockCompany.id,
-        50,
-        '견적 제출',
-        mockEstimateRequest.id,
+      );
+      expect(subscriptionService.incrementEstimateCount).toHaveBeenCalledWith(
+        mockCompany.id,
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         'notification.estimate.submitted',
         expect.anything(),
       );
+    });
+
+    it('일일 한도 초과 시 BadRequestException', async () => {
+      prisma.company.findUnique.mockResolvedValue(mockCompany);
+      prisma.estimateRequest.findUnique.mockResolvedValue(mockEstimateRequest);
+      prisma.estimate.findFirst.mockResolvedValue(null);
+      prisma.estimate.count.mockResolvedValue(0);
+      subscriptionService.canSubmitEstimate.mockResolvedValue({
+        canSubmit: false,
+        used: 3,
+        limit: 3,
+        remaining: 0,
+      });
+
+      await expect(
+        service.submitEstimate(mockCompany.userId, mockEstimateRequest.id, dto),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('업체 정보 없으면 NotFoundException', async () => {
@@ -323,12 +344,12 @@ describe('EstimateService', () => {
       );
     });
 
-    it('다른 견적 자동 거절 + 50% 환불', async () => {
+    it('다른 견적 자동 거절', async () => {
       prisma.estimate.findUnique.mockResolvedValue(mockEstimate);
 
       const otherEstimates = [
-        { id: 'est-2', companyId: 'comp-2', pointsUsed: 50 },
-        { id: 'est-3', companyId: 'comp-3', pointsUsed: 50 },
+        { id: 'est-2', companyId: 'comp-2' },
+        { id: 'est-3', companyId: 'comp-3' },
       ];
 
       const txMock = {
@@ -360,16 +381,6 @@ describe('EstimateService', () => {
         where: { id: { in: ['est-2', 'est-3'] } },
         data: { status: 'REJECTED' },
       });
-
-      // 비동기 환불이 호출되는지 확인 (약간의 딜레이 후)
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(pointService.refundPoints).toHaveBeenCalledTimes(2);
-      expect(pointService.refundPoints).toHaveBeenCalledWith(
-        'comp-2',
-        25, // 50 * 0.5
-        expect.any(String),
-        'est-2',
-      );
     });
 
     it('견적 없으면 NotFoundException', async () => {

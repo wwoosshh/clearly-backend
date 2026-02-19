@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PointService } from '../point/point.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 import { CompanyMetricsService } from '../company/company-metrics.service';
 import { SystemSettingService } from '../system-setting/system-setting.service';
+import { NOTIFICATION_EVENTS, NotificationEvent } from '../notification/notification.events';
 
 @Injectable()
 export class AdminCronService {
@@ -11,13 +13,14 @@ export class AdminCronService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly pointService: PointService,
+    private readonly subscriptionService: SubscriptionService,
     private readonly companyMetricsService: CompanyMetricsService,
     private readonly settings: SystemSettingService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
-   * 3일 이상 미응답 견적 자동 만료 + 포인트 환불
+   * 3일 이상 미응답 견적 자동 만료
    * 매 시간 실행
    */
   @Cron(CronExpression.EVERY_HOUR)
@@ -26,7 +29,6 @@ export class AdminCronService {
     const threeDaysAgo = new Date();
     threeDaysAgo.setDate(threeDaysAgo.getDate() - expiryDays);
 
-    // SUBMITTED 상태이고 3일 이상 경과한 견적 조회
     const expiredEstimates = await this.prisma.estimate.findMany({
       where: {
         status: 'SUBMITTED',
@@ -47,25 +49,14 @@ export class AdminCronService {
 
     for (const estimate of expiredEstimates) {
       try {
-        // 견적 상태를 REJECTED로 변경
         await this.prisma.estimate.update({
           where: { id: estimate.id },
           data: { status: 'REJECTED' },
         });
 
-        // 포인트 환불
-        if (estimate.pointsUsed > 0) {
-          await this.pointService.refundPoints(
-            estimate.companyId,
-            estimate.pointsUsed,
-            `견적 미응답 자동 환불 (${expiryDays}일 초과)`,
-            estimate.id,
-          );
-        }
-
         successCount++;
         this.logger.log(
-          `견적 만료 처리 완료: estimateId=${estimate.id}, companyId=${estimate.companyId}, refund=${estimate.pointsUsed}P`,
+          `견적 만료 처리 완료: estimateId=${estimate.id}, companyId=${estimate.companyId}`,
         );
       } catch (error) {
         failCount++;
@@ -90,7 +81,6 @@ export class AdminCronService {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - requestExpiryDays);
 
-    // 만료 대상 견적요청 조회 (하위 견적도 함께 처리하기 위해 개별 조회)
     const expiredRequests = await this.prisma.estimateRequest.findMany({
       where: {
         status: 'OPEN',
@@ -100,7 +90,7 @@ export class AdminCronService {
         id: true,
         estimates: {
           where: { status: 'SUBMITTED' },
-          select: { id: true, companyId: true, pointsUsed: true },
+          select: { id: true, companyId: true },
         },
       },
     });
@@ -113,7 +103,7 @@ export class AdminCronService {
       data: { status: 'EXPIRED' },
     });
 
-    // 하위 SUBMITTED 견적 일괄 거절 + 포인트 전액 환불
+    // 하위 SUBMITTED 견적 일괄 거절
     const allEstimates = expiredRequests.flatMap((r) => r.estimates);
     if (allEstimates.length > 0) {
       await this.prisma.estimate.updateMany({
@@ -121,27 +111,54 @@ export class AdminCronService {
         data: { status: 'REJECTED' },
       });
 
-      for (const est of allEstimates) {
-        if (est.pointsUsed <= 0) continue;
-        try {
-          await this.pointService.refundPoints(
-            est.companyId,
-            est.pointsUsed,
-            `견적요청 만료에 따른 자동 환불 (${requestExpiryDays}일 초과)`,
-            est.id,
-          );
-        } catch (error) {
-          this.logger.error(
-            `견적요청 만료 환불 실패: estimateId=${est.id}, error=${error}`,
-          );
-        }
-      }
-
       this.logger.log(
-        `견적 요청 자동 만료 처리: ${expiredRequests.length}건 (하위 견적 ${allEstimates.length}건 거절+환불)`,
+        `견적 요청 자동 만료 처리: ${expiredRequests.length}건 (하위 견적 ${allEstimates.length}건 거절)`,
       );
     } else {
       this.logger.log(`견적 요청 자동 만료 처리: ${expiredRequests.length}건`);
+    }
+  }
+
+  /**
+   * 만료 구독 일괄 처리
+   * 매일 자정 실행
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async handleSubscriptionExpiry() {
+    const count = await this.subscriptionService.expireOverdueSubscriptions();
+    if (count > 0) {
+      this.logger.log(`구독 만료 처리: ${count}건`);
+    }
+  }
+
+  /**
+   * 만료 임박 구독 알림 (7일 내 만료)
+   * 매일 오전 9시 실행
+   */
+  @Cron('0 9 * * *')
+  async handleSubscriptionExpiryWarnings() {
+    const warningDays = this.settings.get('subscription_expiry_warning_days', 7);
+    const expiringSoon = await this.subscriptionService.findExpiringSoon(warningDays);
+
+    for (const sub of expiringSoon) {
+      const daysLeft = Math.ceil(
+        (sub.currentPeriodEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+      );
+
+      this.eventEmitter.emit(
+        NOTIFICATION_EVENTS.SUBSCRIPTION_EXPIRING,
+        new NotificationEvent(
+          sub.company.userId,
+          'SUBSCRIPTION_EXPIRING',
+          '구독 만료 예정',
+          `${sub.plan.name} 구독이 ${daysLeft}일 후 만료됩니다. 갱신해주세요.`,
+          { subscriptionId: sub.id, daysLeft },
+        ),
+      );
+    }
+
+    if (expiringSoon.length > 0) {
+      this.logger.log(`구독 만료 임박 알림: ${expiringSoon.length}건`);
     }
   }
 
@@ -221,14 +238,11 @@ export class AdminCronService {
         await this.prisma.$transaction(async (tx) => {
           const companyId = user.company?.id;
 
-          // 1. ChatMessage 삭제 (유저가 보낸 메시지)
           await tx.chatMessage.deleteMany({
             where: { senderId: user.id },
           });
 
-          // 2. 유저의 ChatRoom에 남은 메시지 삭제 후 ChatRoom 삭제
           if (companyId) {
-            // 업체 채팅방의 메시지 삭제
             const companyChatRooms = await tx.chatRoom.findMany({
               where: { companyId },
               select: { id: true },
@@ -241,7 +255,6 @@ export class AdminCronService {
             await tx.chatRoom.deleteMany({ where: { companyId } });
           }
 
-          // 유저의 채팅방 메시지 삭제 후 채팅방 삭제
           const userChatRooms = await tx.chatRoom.findMany({
             where: { userId: user.id },
             select: { id: true },
@@ -253,38 +266,20 @@ export class AdminCronService {
           }
           await tx.chatRoom.deleteMany({ where: { userId: user.id } });
 
-          // 3. Review 삭제
           await tx.review.deleteMany({ where: { userId: user.id } });
           if (companyId) {
             await tx.review.deleteMany({ where: { companyId } });
           }
 
-          // 4. Report 삭제
           await tx.report.deleteMany({ where: { reporterId: user.id } });
 
-          // 5. 업체 관련 데이터 삭제
           if (companyId) {
-            // Matching.estimateId FK 해제
             await tx.matching.updateMany({
               where: { companyId },
               data: { estimateId: null },
             });
 
-            // ChatRoom.estimateId FK는 이미 채팅방 삭제됨
-
-            // Estimate 삭제
             await tx.estimate.deleteMany({ where: { companyId } });
-
-            // PointTransaction → PointWallet 삭제
-            const wallet = await tx.pointWallet.findUnique({
-              where: { companyId },
-            });
-            if (wallet) {
-              await tx.pointTransaction.deleteMany({
-                where: { walletId: wallet.id },
-              });
-              await tx.pointWallet.delete({ where: { id: wallet.id } });
-            }
 
             // Payment → CompanySubscription 삭제
             const subscriptions = await tx.companySubscription.findMany({
@@ -302,11 +297,9 @@ export class AdminCronService {
               });
             }
 
-            // Matching(companyId) 삭제
             await tx.matching.deleteMany({ where: { companyId } });
           }
 
-          // 6. 유저의 EstimateRequest 내 Estimate FK 해제 후 삭제
           const estimateRequests = await tx.estimateRequest.findMany({
             where: { userId: user.id },
             select: { id: true },
@@ -314,7 +307,6 @@ export class AdminCronService {
           if (estimateRequests.length > 0) {
             const erIds = estimateRequests.map((er) => er.id);
 
-            // Matching.estimateId FK 해제 (이 견적요청에 연결된 견적들)
             const estimates = await tx.estimate.findMany({
               where: { estimateRequestId: { in: erIds } },
               select: { id: true },
@@ -331,13 +323,8 @@ export class AdminCronService {
             });
           }
 
-          // 7. EstimateRequest 삭제
           await tx.estimateRequest.deleteMany({ where: { userId: user.id } });
-
-          // 8. Matching(userId) 삭제
           await tx.matching.deleteMany({ where: { userId: user.id } });
-
-          // 9. User 삭제 (Cascade: Company, RefreshToken, Notification; SetNull: Inquiry)
           await tx.user.delete({ where: { id: user.id } });
         });
 
@@ -358,19 +345,11 @@ export class AdminCronService {
     );
   }
 
-  /**
-   * 전체 업체 성과 지표 일괄 업데이트
-   * 매일 새벽 4시 실행
-   */
   @Cron(CronExpression.EVERY_DAY_AT_4AM)
   async handleCompanyMetricsUpdate() {
     await this.companyMetricsService.updateAllCompanyMetrics();
   }
 
-  /**
-   * 성과 기반 자동 경고/정지 조치
-   * 매일 새벽 5시 실행 (4시 metrics 갱신 후)
-   */
   @Cron(CronExpression.EVERY_DAY_AT_5AM)
   async handleAutoActions() {
     await this.companyMetricsService.applyAutoActionsAll();

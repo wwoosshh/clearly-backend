@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PointService } from '../point/point.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 import { ResolveReportDto, ReportActionType } from './dto/resolve-report.dto';
 import { SystemSettingService } from '../system-setting/system-setting.service';
 
@@ -10,7 +10,7 @@ export class AdminService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly pointService: PointService,
+    private readonly subscriptionService: SubscriptionService,
     private readonly settings: SystemSettingService,
   ) {}
 
@@ -28,6 +28,7 @@ export class AdminService {
       openEstimateRequests,
       activeChatRooms,
       pendingInquiries,
+      activeSubscriptions,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.company.count(),
@@ -41,6 +42,7 @@ export class AdminService {
       this.prisma.estimateRequest.count({ where: { status: 'OPEN' } }),
       this.prisma.chatRoom.count({ where: { isActive: true } }),
       this.prisma.inquiry.count({ where: { status: 'PENDING' } }),
+      this.prisma.companySubscription.count({ where: { status: 'ACTIVE' } }),
     ]);
 
     return {
@@ -54,6 +56,7 @@ export class AdminService {
       openEstimateRequests,
       activeChatRooms,
       pendingInquiries,
+      activeSubscriptions,
     };
   }
 
@@ -308,7 +311,7 @@ export class AdminService {
       throw new NotFoundException('업체를 찾을 수 없습니다.');
     }
 
-    const [matchings, reviews, estimates, pointWallet, subscriptions, warnings] =
+    const [matchings, reviews, estimates, activeSubscription, subscriptions, warnings] =
       await Promise.all([
         this.prisma.matching.findMany({
           where: { companyId },
@@ -341,19 +344,12 @@ export class AdminService {
             },
           },
         }),
-        this.prisma.pointWallet.findUnique({
-          where: { companyId },
-          include: {
-            transactions: {
-              take: 20,
-              orderBy: { createdAt: 'desc' },
-            },
-          },
-        }),
+        this.subscriptionService.getHighestActiveSubscription(companyId),
         this.prisma.companySubscription.findMany({
           where: { companyId },
-          take: 5,
+          take: 10,
           orderBy: { createdAt: 'desc' },
+          include: { plan: true },
         }),
         this.prisma.companyWarning.findMany({
           where: { companyId },
@@ -367,7 +363,7 @@ export class AdminService {
       matchings,
       reviews,
       estimates,
-      pointWallet,
+      activeSubscription,
       subscriptions,
       warnings,
     };
@@ -399,20 +395,13 @@ export class AdminService {
       return updated;
     });
 
-    // 신규 업체 승인 시 웰컴 포인트 지급 (트랜잭션 외부 - 실패해도 승인은 유지)
-    const welcomeAmount = this.settings.get('welcome_point_amount', 500);
+    // 신규 업체 승인 시 3개월 무료 Basic 구독 생성 (트랜잭션 외부 - 실패해도 승인은 유지)
     try {
-      await this.pointService.chargePoints(
-        companyId,
-        welcomeAmount,
-        '신규 업체 승인 웰컴 포인트',
-      );
-      this.logger.log(
-        `웰컴 포인트 지급: companyId=${companyId}, amount=${welcomeAmount}P`,
-      );
+      await this.subscriptionService.createFreeTrial(companyId);
+      this.logger.log(`무료 체험 구독 생성: companyId=${companyId}`);
     } catch (error) {
       this.logger.error(
-        `웰컴 포인트 지급 실패: companyId=${companyId}, error=${error}`,
+        `무료 체험 구독 생성 실패: companyId=${companyId}, error=${error}`,
       );
     }
 
@@ -974,6 +963,133 @@ export class AdminService {
     return this.prisma.companyWarning.update({
       where: { id: warningId },
       data: { isResolved: true, resolvedAt: new Date() },
+    });
+  }
+
+  // ─── 구독 관리 ───────────────────────────────────────────
+
+  async getSubscriptions(page: number, limit: number, filters: any) {
+    const skip = (page - 1) * limit;
+    const where: any = {};
+    if (filters?.status) where.status = filters.status;
+    if (filters?.tier) {
+      where.plan = { tier: filters.tier };
+    }
+    if (filters?.search) {
+      where.company = {
+        OR: [
+          { businessName: { contains: filters.search } },
+          { user: { name: { contains: filters.search } } },
+        ],
+      };
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.companySubscription.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          plan: true,
+          company: {
+            select: {
+              id: true,
+              businessName: true,
+              user: { select: { id: true, name: true, email: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.companySubscription.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async getSubscriptionStats() {
+    const [
+      totalActive,
+      totalExpired,
+      basicCount,
+      proCount,
+      premiumCount,
+      trialCount,
+      expiringIn7Days,
+    ] = await Promise.all([
+      this.prisma.companySubscription.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.companySubscription.count({ where: { status: 'EXPIRED' } }),
+      this.prisma.companySubscription.count({
+        where: { status: 'ACTIVE', plan: { tier: 'BASIC' } },
+      }),
+      this.prisma.companySubscription.count({
+        where: { status: 'ACTIVE', plan: { tier: 'PRO' } },
+      }),
+      this.prisma.companySubscription.count({
+        where: { status: 'ACTIVE', plan: { tier: 'PREMIUM' } },
+      }),
+      this.prisma.companySubscription.count({
+        where: { status: 'ACTIVE', isTrial: true },
+      }),
+      this.prisma.companySubscription.count({
+        where: {
+          status: 'ACTIVE',
+          currentPeriodEnd: {
+            gte: new Date(),
+            lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        },
+      }),
+    ]);
+
+    return {
+      totalActive,
+      totalExpired,
+      byTier: { basic: basicCount, pro: proCount, premium: premiumCount },
+      trialCount,
+      expiringIn7Days,
+    };
+  }
+
+  async changeCompanySubscription(
+    companyId: string,
+    planId: string,
+    isTrial?: boolean,
+  ) {
+    return this.subscriptionService.createSubscription(companyId, planId);
+  }
+
+  async extendCompanySubscription(companyId: string, months: number) {
+    const active = await this.prisma.companySubscription.findFirst({
+      where: { companyId, status: 'ACTIVE' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!active) {
+      throw new NotFoundException('활성 구독이 없습니다.');
+    }
+    return this.subscriptionService.extendSubscription(active.id, months);
+  }
+
+  async grantFreeTrial(companyId: string) {
+    return this.subscriptionService.createFreeTrial(companyId);
+  }
+
+  async getSubscriptionPlans() {
+    return this.prisma.subscriptionPlan.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { price: 'asc' }],
+    });
+  }
+
+  async updateSubscriptionPlan(
+    planId: string,
+    data: { price?: number; dailyEstimateLimit?: number; isActive?: boolean },
+  ) {
+    return this.prisma.subscriptionPlan.update({
+      where: { id: planId },
+      data,
     });
   }
 

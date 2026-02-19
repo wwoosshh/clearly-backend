@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Body,
   Param,
@@ -239,6 +240,74 @@ export class AdminController {
   @ApiResponse({ status: 200, description: '경고 해제 성공' })
   async resolveWarning(@Param('warningId') warningId: string) {
     return this.adminService.resolveWarning(warningId);
+  }
+
+  // ─── 구독 관리 ───────────────────────────────────────────
+
+  @Get('subscriptions')
+  @ApiOperation({ summary: '전체 구독 목록 조회' })
+  @ApiResponse({ status: 200, description: '구독 목록 조회 성공' })
+  async getSubscriptions(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+    @Query() filters: any,
+  ) {
+    return this.adminService.getSubscriptions(page, limit, filters);
+  }
+
+  @Get('subscriptions/stats')
+  @ApiOperation({ summary: '구독 통계 조회' })
+  @ApiResponse({ status: 200, description: '구독 통계 조회 성공' })
+  async getSubscriptionStats() {
+    return this.adminService.getSubscriptionStats();
+  }
+
+  @Patch('companies/:companyId/subscription')
+  @ApiOperation({ summary: '업체 구독 변경' })
+  @ApiResponse({ status: 200, description: '구독 변경 성공' })
+  async changeCompanySubscription(
+    @Param('companyId') companyId: string,
+    @Body() body: { planId: string; isTrial?: boolean },
+  ) {
+    return this.adminService.changeCompanySubscription(
+      companyId,
+      body.planId,
+      body.isTrial,
+    );
+  }
+
+  @Post('companies/:companyId/subscription/extend')
+  @ApiOperation({ summary: '구독 연장' })
+  @ApiResponse({ status: 200, description: '구독 연장 성공' })
+  async extendCompanySubscription(
+    @Param('companyId') companyId: string,
+    @Body() body: { months: number },
+  ) {
+    return this.adminService.extendCompanySubscription(companyId, body.months);
+  }
+
+  @Post('companies/:companyId/subscription/trial')
+  @ApiOperation({ summary: '무료 체험 수동 부여' })
+  @ApiResponse({ status: 200, description: '무료 체험 부여 성공' })
+  async grantFreeTrial(@Param('companyId') companyId: string) {
+    return this.adminService.grantFreeTrial(companyId);
+  }
+
+  @Get('subscription-plans')
+  @ApiOperation({ summary: '구독 플랜 목록 (관리자)' })
+  @ApiResponse({ status: 200, description: '플랜 목록 조회 성공' })
+  async getSubscriptionPlans() {
+    return this.adminService.getSubscriptionPlans();
+  }
+
+  @Patch('subscription-plans/:planId')
+  @ApiOperation({ summary: '구독 플랜 수정' })
+  @ApiResponse({ status: 200, description: '플랜 수정 성공' })
+  async updateSubscriptionPlan(
+    @Param('planId') planId: string,
+    @Body() body: { price?: number; dailyEstimateLimit?: number; isActive?: boolean },
+  ) {
+    return this.adminService.updateSubscriptionPlan(planId, body);
   }
 
   // ─── 설정 ──────────────────────────────────────────────

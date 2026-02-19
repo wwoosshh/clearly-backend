@@ -205,11 +205,33 @@ export class NotificationService {
     );
   }
 
-  @OnEvent(NOTIFICATION_EVENTS.POINT_CHANGE)
-  async handlePointChange(event: NotificationEvent) {
+  @OnEvent(NOTIFICATION_EVENTS.SUBSCRIPTION_CREATED)
+  async handleSubscriptionCreated(event: NotificationEvent) {
     await this.create(
       event.userId,
-      'POINT_CHANGE',
+      'SUBSCRIPTION_CREATED',
+      event.title,
+      event.content,
+      event.data,
+    );
+  }
+
+  @OnEvent(NOTIFICATION_EVENTS.SUBSCRIPTION_EXPIRING)
+  async handleSubscriptionExpiring(event: NotificationEvent) {
+    await this.create(
+      event.userId,
+      'SUBSCRIPTION_EXPIRING',
+      event.title,
+      event.content,
+      event.data,
+    );
+  }
+
+  @OnEvent(NOTIFICATION_EVENTS.SUBSCRIPTION_EXPIRED)
+  async handleSubscriptionExpired(event: NotificationEvent) {
+    await this.create(
+      event.userId,
+      'SUBSCRIPTION_EXPIRED',
       event.title,
       event.content,
       event.data,

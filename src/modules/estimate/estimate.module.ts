@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { EstimateController } from './estimate.controller';
 import { EstimateService } from './estimate.service';
-import { PointModule } from '../point/point.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 import { ChatModule } from '../chat/chat.module';
 
 @Module({
-  imports: [PointModule, ChatModule],
+  imports: [SubscriptionModule, ChatModule],
   controllers: [EstimateController],
   providers: [EstimateService],
   exports: [EstimateService],
