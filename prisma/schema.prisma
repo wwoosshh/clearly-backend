@@ -97,8 +97,6 @@ enum NotificationType {
   SUBSCRIPTION_CREATED
   SUBSCRIPTION_EXPIRING
   SUBSCRIPTION_EXPIRED
-  COMPANY_WARNING
-  COMPANY_SUSPENDED
 }
 
 enum ReportReason {
@@ -154,18 +152,6 @@ enum DevicePlatform {
   WEB
 }
 
-enum CompanyTier {
-  STANDARD
-  CERTIFIED
-  PREMIUM
-}
-
-enum WarningType {
-  HIGH_CANCELLATION
-  HIGH_DISPUTE
-  LOW_RATING
-  AUTO_SUSPENDED
-}
 
 // ==================
 // Models
@@ -265,7 +251,6 @@ model Company {
   repeatCustomerRate  Decimal?          @map("repeat_customer_rate") @db.Decimal(5, 2)
   disputeRate         Decimal?          @map("dispute_rate") @db.Decimal(5, 2)
   metricsUpdatedAt    DateTime?         @map("metrics_updated_at")
-  tier               CompanyTier        @default(STANDARD)
   searchScore        Decimal?           @map("search_score") @db.Decimal(5, 2)
   searchScoreAt      DateTime?          @map("search_score_at")
   approvedAt         DateTime?          @map("approved_at")
@@ -278,7 +263,6 @@ model Company {
   reviews       Review[]
   subscriptions CompanySubscription[]
   estimates     Estimate[]
-  warnings      CompanyWarning[]
   customerMemos CustomerMemo[]
 
   @@index([verificationStatus])
@@ -597,21 +581,6 @@ model SystemSetting {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("system_settings")
-}
-
-model CompanyWarning {
-  id         String      @id @default(uuid())
-  companyId  String      @map("company_id")
-  type       WarningType
-  message    String
-  isResolved Boolean     @default(false) @map("is_resolved")
-  resolvedAt DateTime?   @map("resolved_at")
-  createdAt  DateTime    @default(now()) @map("created_at")
-
-  company Company @relation(fields: [companyId], references: [id])
-
-  @@index([companyId, isResolved])
-  @@map("company_warnings")
 }
 
 model DeviceToken {

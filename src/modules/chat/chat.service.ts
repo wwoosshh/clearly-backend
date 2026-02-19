@@ -62,6 +62,12 @@ export class ChatService {
       },
     });
 
+    // 업체 매칭 카운트 증가
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { totalMatchings: { increment: 1 } },
+    });
+
     this.logger.log(
       `채팅방 생성: roomId=${chatRoom.id}, userId=${userId}, companyId=${companyId}`,
     );

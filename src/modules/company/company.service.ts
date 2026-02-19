@@ -41,6 +41,12 @@ export class CompanyService {
             profileImage: true,
           },
         },
+        subscriptions: {
+          where: { status: 'ACTIVE' },
+          include: { plan: { select: { tier: true } } },
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 
@@ -48,8 +54,14 @@ export class CompanyService {
       throw new NotFoundException('업체를 찾을 수 없습니다.');
     }
 
-    await this.redis.set(cacheKey, company, 600); // 10분 캐시
-    return company;
+    const { subscriptions, ...rest } = company;
+    const result = {
+      ...rest,
+      subscriptionTier: subscriptions[0]?.plan?.tier ?? null,
+    };
+
+    await this.redis.set(cacheKey, result, 600); // 10분 캐시
+    return result;
   }
 
   async getMyCompany(userId: string) {
@@ -203,24 +215,12 @@ export class CompanyService {
       keyword,
       specialty,
       region,
-      address,
       sortBy = SortBy.SCORE,
       page = 1,
       limit = 10,
-      maxDistance = 50,
     } = dto;
-    let { latitude, longitude } = dto;
 
-    // 주소가 있으면 좌표로 변환 시도
-    if (address && (!latitude || !longitude)) {
-      const coords = await this.geocodingService.geocodeAddress(address);
-      if (coords) {
-        latitude = coords.latitude;
-        longitude = coords.longitude;
-      }
-    }
-
-    // --- DB 레벨 필터링 (키워드/전문분야/지역) ---
+    // --- DB 레벨 필터링 (키워드) ---
     const whereConditions: any = {
       verificationStatus: 'APPROVED',
       isActive: true,
@@ -231,21 +231,6 @@ export class CompanyService {
         { businessName: { contains: keyword, mode: 'insensitive' } },
         { description: { contains: keyword, mode: 'insensitive' } },
       ];
-    }
-
-    // 위치 기반 bounding box 사전 필터링 (DB 레벨)
-    if (latitude != null && longitude != null) {
-      const latDelta = maxDistance / 111;
-      const lngDelta =
-        maxDistance / (111 * Math.cos((latitude * Math.PI) / 180));
-      whereConditions.latitude = {
-        gte: latitude - latDelta,
-        lte: latitude + latDelta,
-      };
-      whereConditions.longitude = {
-        gte: longitude - lngDelta,
-        lte: longitude + lngDelta,
-      };
     }
 
     const companies = await this.prisma.company.findMany({
@@ -268,9 +253,7 @@ export class CompanyService {
       },
     });
 
-    const hasSearchLocation = latitude != null && longitude != null;
-
-    // --- 메모리 필터링 (JSON 필드 + 거리: DB에서 직접 필터 불가) ---
+    // --- 메모리 필터링 (JSON 필드: DB에서 직접 필터 불가) ---
     const companiesWithScore = companies
       .map((company) => {
         // 전문분야 필터 (JSON 배열이므로 메모리에서 처리)
@@ -304,22 +287,6 @@ export class CompanyService {
           if (!nameMatch && !descMatch && !specMatch) return null;
         }
 
-        // 거리 계산 (좌표가 있는 경우에만)
-        let distance: number | null = null;
-        if (
-          hasSearchLocation &&
-          company.latitude != null &&
-          company.longitude != null
-        ) {
-          distance = this.calculateHaversineDistance(
-            latitude!,
-            longitude!,
-            Number(company.latitude),
-            Number(company.longitude),
-          );
-          if (distance > maxDistance) return null;
-        }
-
         // 구독 등급 가중치 (구독 없으면 기본 1.0 적용)
         const subscription = company.subscriptions[0];
         const priorityWeight = subscription?.plan?.priorityWeight ?? 1.0;
@@ -340,29 +307,13 @@ export class CompanyService {
         // 신규 업체 부스트 (가입 30일 이내 +15점, 이후 60일까지 점진 감소)
         const boostScore = this.calcNewCompanyBoost(company.approvedAt);
 
-        // 업체 고유 품질 점수 (거리 무관, DB 저장용)
-        const baseScore =
+        const totalScore =
           ratingScore * 0.35 +
           profileScore * 0.25 +
           responseScore * 0.15 +
           matchingScore * 0.15 +
           subscriptionScore * 0.1 +
           boostScore;
-
-        let totalScore: number;
-        if (hasSearchLocation && distance != null) {
-          const distanceScore = this.calcDistanceScore(distance, maxDistance);
-          totalScore =
-            distanceScore * 0.3 +
-            ratingScore * 0.25 +
-            profileScore * 0.15 +
-            responseScore * 0.1 +
-            matchingScore * 0.1 +
-            subscriptionScore * 0.1 +
-            boostScore;
-        } else {
-          totalScore = baseScore;
-        }
 
         return {
           id: company.id,
@@ -385,10 +336,11 @@ export class CompanyService {
           experienceYears: company.experienceYears,
           contactHours: company.contactHours,
           employeeCount: company.employeeCount,
+          subscriptionTier: subscription?.plan?.tier ?? null,
           isNew: boostScore > 0,
-          distance: distance != null ? Math.round(distance * 10) / 10 : null,
+          distance: null,
           score: Math.round(totalScore * 10) / 10,
-          baseScore: Math.round(baseScore * 10) / 10,
+          baseScore: Math.round(totalScore * 10) / 10,
           user: company.user,
         };
       })
@@ -425,7 +377,7 @@ export class CompanyService {
         limit,
         totalPages,
       },
-      searchLocation: hasSearchLocation ? { latitude, longitude } : null,
+      searchLocation: null,
     };
   }
 
@@ -459,39 +411,6 @@ export class CompanyService {
         companies.sort((a, b) => b.score - a.score);
         break;
     }
-  }
-
-  /** Haversine 공식으로 두 좌표 간 거리 계산 (km) */
-  private calculateHaversineDistance(
-    lat1: number,
-    lon1: number,
-    lat2: number,
-    lon2: number,
-  ): number {
-    const R = 6371; // 지구 반경 (km)
-    const dLat = this.toRadians(lat2 - lat1);
-    const dLon = this.toRadians(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(this.toRadians(lat1)) *
-        Math.cos(this.toRadians(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  }
-
-  private toRadians(deg: number): number {
-    return deg * (Math.PI / 180);
-  }
-
-  /** 거리 점수: 0km=100, maxDistance=0 */
-  private calcDistanceScore(
-    distance: number | null,
-    maxDistance: number,
-  ): number {
-    if (distance == null) return 50; // 거리 정보 없으면 중간값
-    return Math.max(0, 100 * (1 - distance / maxDistance));
   }
 
   /** 평점 점수: 5.0=100, 0.0=0 */

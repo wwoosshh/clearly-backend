@@ -233,15 +233,6 @@ export class AdminController {
     return this.adminService.getMatchings(page, limit, filters);
   }
 
-  // ─── 경고 관리 ────────────────────────────────────────
-
-  @Patch('warnings/:warningId/resolve')
-  @ApiOperation({ summary: '업체 경고 해제' })
-  @ApiResponse({ status: 200, description: '경고 해제 성공' })
-  async resolveWarning(@Param('warningId') warningId: string) {
-    return this.adminService.resolveWarning(warningId);
-  }
-
   // ─── 구독 관리 ───────────────────────────────────────────
 
   @Get('subscriptions')

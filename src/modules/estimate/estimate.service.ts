@@ -518,6 +518,12 @@ export class EstimateService {
         data: { status: 'CLOSED' },
       });
 
+      // 6. 업체 매칭 카운트 증가
+      await tx.company.update({
+        where: { id: estimate.companyId },
+        data: { totalMatchings: { increment: 1 } },
+      });
+
       return { estimate: updatedEstimate, matching, chatRoom };
     });
 

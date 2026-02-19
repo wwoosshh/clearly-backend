@@ -317,7 +317,7 @@ export class AdminService {
       throw new NotFoundException('업체를 찾을 수 없습니다.');
     }
 
-    const [matchings, reviews, estimates, activeSubscription, subscriptions, warnings] =
+    const [matchings, reviews, estimates, activeSubscription, subscriptions] =
       await Promise.all([
         this.prisma.matching.findMany({
           where: { companyId },
@@ -357,11 +357,6 @@ export class AdminService {
           orderBy: { createdAt: 'desc' },
           include: { plan: true },
         }),
-        this.prisma.companyWarning.findMany({
-          where: { companyId },
-          orderBy: { createdAt: 'desc' },
-          take: 20,
-        }),
       ]);
 
     return {
@@ -371,7 +366,6 @@ export class AdminService {
       estimates,
       activeSubscription,
       subscriptions,
-      warnings,
     };
   }
 
@@ -953,23 +947,6 @@ export class AdminService {
         totalPages: Math.ceil(total / limit),
       },
     };
-  }
-
-  // ─── 경고 관리 ────────────────────────────────────────
-
-  async resolveWarning(warningId: string) {
-    const warning = await this.prisma.companyWarning.findUnique({
-      where: { id: warningId },
-    });
-
-    if (!warning) {
-      throw new NotFoundException('경고를 찾을 수 없습니다.');
-    }
-
-    return this.prisma.companyWarning.update({
-      where: { id: warningId },
-      data: { isResolved: true, resolvedAt: new Date() },
-    });
   }
 
   // ─── 구독 관리 ───────────────────────────────────────────

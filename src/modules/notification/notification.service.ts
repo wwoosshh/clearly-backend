@@ -271,25 +271,4 @@ export class NotificationService {
     );
   }
 
-  @OnEvent(NOTIFICATION_EVENTS.COMPANY_WARNING)
-  async handleCompanyWarning(event: NotificationEvent) {
-    await this.create(
-      event.userId,
-      'COMPANY_WARNING',
-      event.title,
-      event.content,
-      event.data,
-    );
-  }
-
-  @OnEvent(NOTIFICATION_EVENTS.COMPANY_SUSPENDED)
-  async handleCompanySuspended(event: NotificationEvent) {
-    await this.create(
-      event.userId,
-      'COMPANY_SUSPENDED',
-      event.title,
-      event.content,
-      event.data,
-    );
-  }
 }

@@ -15,12 +15,6 @@ const DEFAULT_SETTINGS: Record<string, { value: any; description: string }> = {
   basic_daily_estimate_limit: { value: 3, description: 'Basic 일일 견적 한도' },
   pro_daily_estimate_limit: { value: 10, description: 'Pro 일일 견적 한도' },
   premium_daily_estimate_limit: { value: 50, description: 'Premium 일일 견적 한도' },
-  tier_certified_min_rating: { value: 3.5, description: '인증등급 최소 평점' },
-  tier_certified_min_reviews: { value: 3, description: '인증등급 최소 리뷰' },
-  tier_premium_min_rating: { value: 4.0, description: '프리미엄 최소 평점' },
-  tier_premium_min_reviews: { value: 10, description: '프리미엄 최소 리뷰' },
-  warning_cancellation_threshold: { value: 20, description: '경고 취소율 (%)' },
-  suspend_cancellation_threshold: { value: 35, description: '정지 취소율 (%)' },
 };
 
 @Injectable()

@@ -350,8 +350,4 @@ export class AdminCronService {
     await this.companyMetricsService.updateAllCompanyMetrics();
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_5AM)
-  async handleAutoActions() {
-    await this.companyMetricsService.applyAutoActionsAll();
-  }
 }

@@ -34,23 +34,6 @@ export class SearchCompanyDto {
   @IsOptional()
   region?: string;
 
-  @ApiPropertyOptional({ description: '주소 텍스트 (서버에서 좌표 변환)' })
-  @IsString()
-  @IsOptional()
-  address?: string;
-
-  @ApiPropertyOptional({ description: '위도 (직접 좌표 전달 시)' })
-  @Type(() => Number)
-  @IsNumber()
-  @IsOptional()
-  latitude?: number;
-
-  @ApiPropertyOptional({ description: '경도 (직접 좌표 전달 시)' })
-  @Type(() => Number)
-  @IsNumber()
-  @IsOptional()
-  longitude?: number;
-
   @ApiPropertyOptional({
     description: '정렬 기준',
     enum: SortBy,
@@ -74,15 +57,4 @@ export class SearchCompanyDto {
   @Max(50)
   @IsOptional()
   limit?: number = 10;
-
-  @ApiPropertyOptional({
-    description: '최대 검색 거리 (km)',
-    default: 50,
-  })
-  @Type(() => Number)
-  @IsNumber()
-  @Min(1)
-  @Max(200)
-  @IsOptional()
-  maxDistance?: number = 50;
 }
