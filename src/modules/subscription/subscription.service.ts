@@ -15,6 +15,8 @@ import {
 } from './types/subscription.types';
 import { NOTIFICATION_EVENTS, NotificationEvent } from '../notification/notification.events';
 
+const TIER_PRIORITY: Record<string, number> = { BASIC: 1, PRO: 2, PREMIUM: 3 };
+
 @Injectable()
 export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
@@ -50,7 +52,7 @@ export class SubscriptionService {
     return grouped;
   }
 
-  /** 구독 생성 */
+  /** 구독 생성 (applySubscription 로직) */
   async createSubscription(
     companyId: string,
     planId: string,
@@ -67,37 +69,49 @@ export class SubscriptionService {
       throw new BadRequestException('유효하지 않은 구독 플랜입니다.');
     }
 
-    // Pro/Premium은 Basic 활성 구독이 필요
-    if (plan.tier !== 'BASIC') {
-      const activeBasic = await this.prisma.companySubscription.findFirst({
-        where: {
-          companyId,
-          status: 'ACTIVE',
-          plan: { tier: 'BASIC' },
-        },
-        include: { plan: true },
-      });
-      if (!activeBasic) {
-        throw new BadRequestException(
-          'Pro/Premium 구독은 Basic 구독이 활성 상태여야 합니다.',
-        );
-      }
-    }
-
-    // 같은 tier의 활성 구독이 있는지 확인
-    const existingActive = await this.prisma.companySubscription.findFirst({
+    // 현재 ACTIVE 구독 조회 (최대 1개)
+    const activeSub = await this.prisma.companySubscription.findFirst({
       where: {
         companyId,
         status: 'ACTIVE',
-        plan: { tier: plan.tier },
+        currentPeriodEnd: { gte: new Date() },
       },
+      include: { plan: true },
     });
-    if (existingActive) {
-      throw new BadRequestException(
-        `이미 활성화된 ${plan.tier} 구독이 있습니다.`,
-      );
+
+    let result: any;
+
+    if (!activeSub) {
+      // ACTIVE 구독 없음 → 신규 생성
+      result = await this.activateNewSubscription(companyId, plan, company.userId);
+    } else {
+      const currentTierPriority = TIER_PRIORITY[activeSub.plan.tier] ?? 0;
+      const newTierPriority = TIER_PRIORITY[plan.tier] ?? 0;
+
+      if (activeSub.plan.tier === plan.tier) {
+        // 같은 등급 → 기간 합산
+        result = await this.extendExistingSubscription(activeSub, plan, company.userId);
+      } else if (newTierPriority > currentTierPriority) {
+        // 상위 등급 → 업그레이드
+        result = await this.upgradeSubscription(companyId, activeSub, plan, company.userId);
+      } else {
+        // 하위 등급 → 다운그레이드
+        result = await this.downgradeSubscription(companyId, activeSub, plan, company.userId);
+      }
     }
 
+    // 캐시 무효화
+    await this.redis.del(`subscription:active:${companyId}`);
+
+    return result;
+  }
+
+  /** 신규 구독 활성화 */
+  private async activateNewSubscription(
+    companyId: string,
+    plan: any,
+    userId: string,
+  ) {
     const now = new Date();
     const endDate = new Date(now);
     endDate.setMonth(endDate.getMonth() + plan.durationMonths);
@@ -105,7 +119,7 @@ export class SubscriptionService {
     const subscription = await this.prisma.companySubscription.create({
       data: {
         companyId,
-        planId,
+        planId: plan.id,
         status: 'ACTIVE',
         currentPeriodStart: now,
         currentPeriodEnd: endDate,
@@ -114,14 +128,10 @@ export class SubscriptionService {
       include: { plan: true },
     });
 
-    // 캐시 무효화
-    await this.redis.del(`subscription:active:${companyId}`);
-
-    // 알림
     this.eventEmitter.emit(
       NOTIFICATION_EVENTS.SUBSCRIPTION_CREATED,
       new NotificationEvent(
-        company.userId,
+        userId,
         'SUBSCRIPTION_CREATED',
         '구독이 시작되었습니다',
         `${plan.name} 구독이 활성화되었습니다. (${plan.durationMonths}개월)`,
@@ -130,6 +140,127 @@ export class SubscriptionService {
     );
 
     return subscription;
+  }
+
+  /** 같은 등급 기간 합산 */
+  private async extendExistingSubscription(
+    activeSub: any,
+    newPlan: any,
+    userId: string,
+  ) {
+    const newEnd = new Date(activeSub.currentPeriodEnd);
+    newEnd.setMonth(newEnd.getMonth() + newPlan.durationMonths);
+
+    const updated = await this.prisma.companySubscription.update({
+      where: { id: activeSub.id },
+      data: {
+        currentPeriodEnd: newEnd,
+        isTrial: false,
+      },
+      include: { plan: true },
+    });
+
+    this.eventEmitter.emit(
+      NOTIFICATION_EVENTS.SUBSCRIPTION_CREATED,
+      new NotificationEvent(
+        userId,
+        'SUBSCRIPTION_CREATED',
+        '구독이 연장되었습니다',
+        `${newPlan.name} 구독이 ${newPlan.durationMonths}개월 연장되었습니다.`,
+        { subscriptionId: updated.id, planName: newPlan.name },
+      ),
+    );
+
+    return updated;
+  }
+
+  /** 업그레이드 (하위 → 상위) */
+  private async upgradeSubscription(
+    companyId: string,
+    activeSub: any,
+    newPlan: any,
+    userId: string,
+  ) {
+    const now = new Date();
+    const endDate = new Date(now);
+    endDate.setMonth(endDate.getMonth() + newPlan.durationMonths);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 기존 구독 일시정지
+      await tx.companySubscription.update({
+        where: { id: activeSub.id },
+        data: {
+          status: 'PAUSED',
+          pausedAt: now,
+        },
+      });
+
+      // 새 상위 구독 활성화
+      const newSub = await tx.companySubscription.create({
+        data: {
+          companyId,
+          planId: newPlan.id,
+          status: 'ACTIVE',
+          currentPeriodStart: now,
+          currentPeriodEnd: endDate,
+          isTrial: false,
+        },
+        include: { plan: true },
+      });
+
+      return newSub;
+    });
+
+    this.eventEmitter.emit(
+      NOTIFICATION_EVENTS.SUBSCRIPTION_CREATED,
+      new NotificationEvent(
+        userId,
+        'SUBSCRIPTION_CREATED',
+        '구독이 업그레이드되었습니다',
+        `${newPlan.name} 구독으로 업그레이드되었습니다. 기존 ${activeSub.plan.tier} 구독의 남은 기간은 보존됩니다.`,
+        { subscriptionId: result.id, planName: newPlan.name },
+      ),
+    );
+
+    return result;
+  }
+
+  /** 다운그레이드 (상위 → 하위) */
+  private async downgradeSubscription(
+    companyId: string,
+    activeSub: any,
+    newPlan: any,
+    userId: string,
+  ) {
+    const now = new Date();
+    // 임시 기간값 (활성화 시 재계산)
+    const tempEnd = new Date(now);
+    tempEnd.setMonth(tempEnd.getMonth() + newPlan.durationMonths);
+
+    const queuedSub = await this.prisma.companySubscription.create({
+      data: {
+        companyId,
+        planId: newPlan.id,
+        status: 'QUEUED',
+        currentPeriodStart: now,
+        currentPeriodEnd: tempEnd,
+        isTrial: false,
+      },
+      include: { plan: true },
+    });
+
+    this.eventEmitter.emit(
+      NOTIFICATION_EVENTS.SUBSCRIPTION_CREATED,
+      new NotificationEvent(
+        userId,
+        'SUBSCRIPTION_CREATED',
+        '구독이 예약되었습니다',
+        `${newPlan.name} 구독이 대기 중입니다. 현재 ${activeSub.plan.tier} 구독 만료 후 자동으로 활성화됩니다.`,
+        { subscriptionId: queuedSub.id, planName: newPlan.name },
+      ),
+    );
+
+    return queuedSub;
   }
 
   /** 3개월 무료 Basic 구독 생성 (업체 승인 시 호출) */
@@ -223,49 +354,23 @@ export class SubscriptionService {
     return info;
   }
 
-  /** 활성 구독 중 가장 높은 tier 반환 */
+  /** 활성 구독 중 가장 높은 tier 반환 (getActiveSubscription의 alias) */
   async getHighestActiveSubscription(
     companyId: string,
   ): Promise<ActiveSubscriptionInfo | null> {
-    const cacheKey = `subscription:active:${companyId}`;
-    const cached = await this.redis.get<ActiveSubscriptionInfo>(cacheKey);
-    if (cached) return cached;
+    return this.getActiveSubscription(companyId);
+  }
 
-    const subscriptions = await this.prisma.companySubscription.findMany({
+  /** 구독 스택 조회 (ACTIVE + PAUSED + QUEUED) */
+  async getSubscriptionStack(companyId: string) {
+    return this.prisma.companySubscription.findMany({
       where: {
         companyId,
-        status: 'ACTIVE',
-        currentPeriodEnd: { gte: new Date() },
+        status: { in: ['ACTIVE', 'PAUSED', 'QUEUED'] },
       },
       include: { plan: true },
       orderBy: { plan: { priorityWeight: 'desc' } },
     });
-
-    if (subscriptions.length === 0) return null;
-
-    // 가장 높은 tier 구독 반환
-    const best = subscriptions[0];
-    // dailyEstimateLimit은 가장 높은 것 사용
-    const maxLimit = Math.max(
-      ...subscriptions.map((s) => s.plan.dailyEstimateLimit),
-    );
-
-    const info: ActiveSubscriptionInfo = {
-      id: best.id,
-      companyId: best.companyId,
-      tier: best.plan.tier,
-      status: best.status,
-      planName: best.plan.name,
-      dailyEstimateLimit: maxLimit,
-      priorityWeight: Number(best.plan.priorityWeight),
-      currentPeriodStart: best.currentPeriodStart,
-      currentPeriodEnd: best.currentPeriodEnd,
-      isTrial: best.isTrial,
-      cancelledAt: best.cancelledAt,
-    };
-
-    await this.redis.set(cacheKey, info, 300);
-    return info;
   }
 
   /** 구독 이력 조회 */
@@ -348,7 +453,7 @@ export class SubscriptionService {
 
   /** 일일 견적 한도 확인 */
   async canSubmitEstimate(companyId: string): Promise<EstimateLimitInfo> {
-    const subscription = await this.getHighestActiveSubscription(companyId);
+    const subscription = await this.getActiveSubscription(companyId);
     if (!subscription) {
       return { used: 0, limit: 0, remaining: 0, resetAt: '' };
     }
@@ -377,42 +482,157 @@ export class SubscriptionService {
     await this.redis.set(redisKey, current + 1, ttl);
   }
 
-  /** 만료 구독 일괄 처리 (cron용) */
+  /** 만료 구독 처리 + 자동 재개/활성화 (cron용) */
   async expireOverdueSubscriptions(): Promise<number> {
-    const result = await this.prisma.companySubscription.updateMany({
+    const now = new Date();
+
+    // 만료 대상 구독 조회
+    const overdueSubscriptions = await this.prisma.companySubscription.findMany({
       where: {
         status: { in: ['ACTIVE', 'CANCELLED'] },
-        currentPeriodEnd: { lt: new Date() },
+        currentPeriodEnd: { lt: now },
       },
-      data: { status: 'EXPIRED' },
+      include: {
+        company: { select: { id: true, userId: true } },
+      },
     });
 
-    if (result.count > 0) {
-      this.logger.log(`${result.count}개 구독이 만료 처리되었습니다.`);
+    if (overdueSubscriptions.length === 0) return 0;
 
-      // 만료된 구독의 캐시 무효화
-      const expired = await this.prisma.companySubscription.findMany({
-        where: { status: 'EXPIRED' },
-        select: { companyId: true, company: { select: { userId: true } } },
-        distinct: ['companyId'],
-      });
+    // companyId별 그룹화
+    const byCompany = new Map<string, typeof overdueSubscriptions>();
+    for (const sub of overdueSubscriptions) {
+      const group = byCompany.get(sub.companyId) || [];
+      group.push(sub);
+      byCompany.set(sub.companyId, group);
+    }
 
-      for (const sub of expired) {
-        await this.redis.del(`subscription:active:${sub.companyId}`);
-        this.eventEmitter.emit(
-          NOTIFICATION_EVENTS.SUBSCRIPTION_EXPIRED,
-          new NotificationEvent(
-            sub.company.userId,
-            'SUBSCRIPTION_EXPIRED',
-            '구독이 만료되었습니다',
-            '구독이 만료되었습니다. 서비스 이용을 위해 구독을 갱신해주세요.',
-            { companyId: sub.companyId },
-          ),
-        );
+    let totalExpired = 0;
+
+    for (const [companyId, subs] of byCompany) {
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          // a. 만료 대상 → EXPIRED
+          const subIds = subs.map((s) => s.id);
+          await tx.companySubscription.updateMany({
+            where: { id: { in: subIds } },
+            data: { status: 'EXPIRED' },
+          });
+          totalExpired += subIds.length;
+
+          // b. PAUSED 중 가장 높은 등급 재개
+          const resumed = await this.resumeHighestPausedSubscription(tx, companyId);
+
+          // c. PAUSED 없으면 QUEUED 중 가장 높은 등급 활성화
+          if (!resumed) {
+            await this.activateHighestQueuedSubscription(tx, companyId);
+          }
+        });
+
+        // 캐시 무효화
+        await this.redis.del(`subscription:active:${companyId}`);
+
+        // 만료 알림
+        const userId = subs[0]?.company?.userId;
+        if (userId) {
+          this.eventEmitter.emit(
+            NOTIFICATION_EVENTS.SUBSCRIPTION_EXPIRED,
+            new NotificationEvent(
+              userId,
+              'SUBSCRIPTION_EXPIRED',
+              '구독이 만료되었습니다',
+              '구독이 만료되었습니다. 서비스 이용을 위해 구독을 갱신해주세요.',
+              { companyId },
+            ),
+          );
+        }
+      } catch (error) {
+        this.logger.error(`구독 만료 처리 실패: companyId=${companyId}`, error);
       }
     }
 
-    return result.count;
+    if (totalExpired > 0) {
+      this.logger.log(`${totalExpired}개 구독이 만료 처리되었습니다.`);
+    }
+
+    return totalExpired;
+  }
+
+  /** PAUSED 구독 재개 (가장 높은 등급) */
+  private async resumeHighestPausedSubscription(
+    tx: any,
+    companyId: string,
+  ): Promise<boolean> {
+    const paused = await tx.companySubscription.findFirst({
+      where: { companyId, status: 'PAUSED' },
+      include: { plan: true },
+      orderBy: { plan: { priorityWeight: 'desc' } },
+    });
+
+    if (!paused || !paused.pausedAt) return false;
+
+    const remainingMs =
+      paused.currentPeriodEnd.getTime() - paused.pausedAt.getTime();
+
+    if (remainingMs <= 0) {
+      await tx.companySubscription.update({
+        where: { id: paused.id },
+        data: { status: 'EXPIRED', pausedAt: null },
+      });
+      return false;
+    }
+
+    const now = new Date();
+    const newEnd = new Date(now.getTime() + remainingMs);
+
+    await tx.companySubscription.update({
+      where: { id: paused.id },
+      data: {
+        status: 'ACTIVE',
+        currentPeriodStart: now,
+        currentPeriodEnd: newEnd,
+        pausedAt: null,
+      },
+    });
+
+    this.logger.log(
+      `PAUSED 구독 재개: companyId=${companyId}, tier=${paused.plan.tier}, 남은기간=${Math.ceil(remainingMs / 86400000)}일`,
+    );
+
+    return true;
+  }
+
+  /** QUEUED 구독 활성화 (가장 높은 등급) */
+  private async activateHighestQueuedSubscription(
+    tx: any,
+    companyId: string,
+  ): Promise<boolean> {
+    const queued = await tx.companySubscription.findFirst({
+      where: { companyId, status: 'QUEUED' },
+      include: { plan: true },
+      orderBy: { plan: { priorityWeight: 'desc' } },
+    });
+
+    if (!queued) return false;
+
+    const now = new Date();
+    const endDate = new Date(now);
+    endDate.setMonth(endDate.getMonth() + queued.plan.durationMonths);
+
+    await tx.companySubscription.update({
+      where: { id: queued.id },
+      data: {
+        status: 'ACTIVE',
+        currentPeriodStart: now,
+        currentPeriodEnd: endDate,
+      },
+    });
+
+    this.logger.log(
+      `QUEUED 구독 활성화: companyId=${companyId}, tier=${queued.plan.tier}, ${queued.plan.durationMonths}개월`,
+    );
+
+    return true;
   }
 
   /** 만료 임박 구독 조회 (cron용) */

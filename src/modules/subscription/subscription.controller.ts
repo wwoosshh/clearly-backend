@@ -67,6 +67,17 @@ export class SubscriptionController {
     );
   }
 
+  @Get('my/stack')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('COMPANY')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '구독 스택 조회 (ACTIVE/PAUSED/QUEUED)' })
+  @ApiResponse({ status: 200, description: '구독 스택 조회 성공' })
+  async getMyStack(@CurrentUser() user: any) {
+    const company = await this.getCompanyByUserId(user.id);
+    return this.subscriptionService.getSubscriptionStack(company.id);
+  }
+
   @Get('my/estimate-limit')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('COMPANY')

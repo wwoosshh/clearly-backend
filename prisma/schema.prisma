@@ -60,6 +60,8 @@ enum MessageType {
 
 enum SubscriptionStatus {
   ACTIVE
+  PAUSED
+  QUEUED
   CANCELLED
   EXPIRED
   PAST_DUE
@@ -405,6 +407,7 @@ model CompanySubscription {
   currentPeriodStart DateTime           @map("current_period_start")
   currentPeriodEnd   DateTime           @map("current_period_end")
   isTrial            Boolean            @default(false) @map("is_trial")
+  pausedAt           DateTime?          @map("paused_at")
   cancelledAt        DateTime?          @map("cancelled_at")
   paymentMethod      String?            @map("payment_method") @db.VarChar(50)
   createdAt          DateTime           @default(now()) @map("created_at")

@@ -10,4 +10,13 @@ export class SystemSettingController {
     const value = this.settingService.get<string>('payment_bank_account', '');
     return value || null;
   }
+
+  @Get('payment-info')
+  getPaymentInfo() {
+    return {
+      bankName: this.settingService.get<string>('payment_bank_name', ''),
+      bankAccount: this.settingService.get<string>('payment_bank_account', ''),
+      accountHolder: this.settingService.get<string>('payment_account_holder', ''),
+    };
+  }
 }

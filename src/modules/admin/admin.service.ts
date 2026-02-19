@@ -997,6 +997,8 @@ export class AdminService {
     const [
       totalActive,
       totalExpired,
+      totalPaused,
+      totalQueued,
       basicCount,
       proCount,
       premiumCount,
@@ -1005,6 +1007,8 @@ export class AdminService {
     ] = await Promise.all([
       this.prisma.companySubscription.count({ where: { status: 'ACTIVE' } }),
       this.prisma.companySubscription.count({ where: { status: 'EXPIRED' } }),
+      this.prisma.companySubscription.count({ where: { status: 'PAUSED' } }),
+      this.prisma.companySubscription.count({ where: { status: 'QUEUED' } }),
       this.prisma.companySubscription.count({
         where: { status: 'ACTIVE', plan: { tier: 'BASIC' } },
       }),
@@ -1029,9 +1033,11 @@ export class AdminService {
     ]);
 
     return {
-      total: totalActive + totalExpired,
+      total: totalActive + totalExpired + totalPaused + totalQueued,
       active: totalActive,
       expired: totalExpired,
+      paused: totalPaused,
+      queued: totalQueued,
       trial: trialCount,
       byTier: { BASIC: basicCount, PRO: proCount, PREMIUM: premiumCount },
       expiringIn7Days,
