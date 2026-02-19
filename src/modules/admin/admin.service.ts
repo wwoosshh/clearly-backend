@@ -1052,10 +1052,11 @@ export class AdminService {
     ]);
 
     return {
-      totalActive,
-      totalExpired,
-      byTier: { basic: basicCount, pro: proCount, premium: premiumCount },
-      trialCount,
+      total: totalActive + totalExpired,
+      active: totalActive,
+      expired: totalExpired,
+      trial: trialCount,
+      byTier: { BASIC: basicCount, PRO: proCount, PREMIUM: premiumCount },
       expiringIn7Days,
     };
   }
