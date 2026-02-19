@@ -29,6 +29,8 @@ export class AdminService {
       activeChatRooms,
       pendingInquiries,
       activeSubscriptions,
+      trialSubscriptions,
+      expiredSubscriptions,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.company.count(),
@@ -43,6 +45,8 @@ export class AdminService {
       this.prisma.chatRoom.count({ where: { isActive: true } }),
       this.prisma.inquiry.count({ where: { status: 'PENDING' } }),
       this.prisma.companySubscription.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.companySubscription.count({ where: { status: 'ACTIVE', isTrial: true } }),
+      this.prisma.companySubscription.count({ where: { status: 'EXPIRED' } }),
     ]);
 
     return {
@@ -57,6 +61,8 @@ export class AdminService {
       activeChatRooms,
       pendingInquiries,
       activeSubscriptions,
+      trialSubscriptions,
+      expiredSubscriptions,
     };
   }
 
