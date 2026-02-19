@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -282,6 +283,15 @@ export class AdminController {
   @ApiResponse({ status: 200, description: '무료 체험 부여 성공' })
   async grantFreeTrial(@Param('companyId') companyId: string) {
     return this.adminService.grantFreeTrial(companyId);
+  }
+
+  @Delete('subscriptions/:subscriptionId')
+  @ApiOperation({ summary: '구독 개별 취소 (관리자)' })
+  @ApiResponse({ status: 200, description: '구독 취소 성공' })
+  async cancelSubscription(
+    @Param('subscriptionId') subscriptionId: string,
+  ) {
+    return this.adminService.cancelCompanySubscription(subscriptionId);
   }
 
   @Get('subscription-plans')

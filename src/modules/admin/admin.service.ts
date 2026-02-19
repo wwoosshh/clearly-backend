@@ -317,7 +317,7 @@ export class AdminService {
       throw new NotFoundException('업체를 찾을 수 없습니다.');
     }
 
-    const [matchings, reviews, estimates, activeSubscription, subscriptions] =
+    const [matchings, reviews, estimates, activeSubscription, subscriptions, subscriptionStack] =
       await Promise.all([
         this.prisma.matching.findMany({
           where: { companyId },
@@ -357,6 +357,7 @@ export class AdminService {
           orderBy: { createdAt: 'desc' },
           include: { plan: true },
         }),
+        this.subscriptionService.getSubscriptionStack(companyId),
       ]);
 
     return {
@@ -366,6 +367,7 @@ export class AdminService {
       estimates,
       activeSubscription,
       subscriptions,
+      subscriptionStack,
     };
   }
 
@@ -1061,6 +1063,10 @@ export class AdminService {
       throw new NotFoundException('활성 구독이 없습니다.');
     }
     return this.subscriptionService.extendSubscription(active.id, months);
+  }
+
+  async cancelCompanySubscription(subscriptionId: string) {
+    return this.subscriptionService.cancelSubscriptionById(subscriptionId);
   }
 
   async grantFreeTrial(companyId: string) {

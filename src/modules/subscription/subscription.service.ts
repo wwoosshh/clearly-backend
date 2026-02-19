@@ -426,6 +426,55 @@ export class SubscriptionService {
     return { message: '구독이 해지되었습니다. 남은 기간까지 이용 가능합니다.' };
   }
 
+  /** 관리자 구독 개별 취소 (subscriptionId 기반) */
+  async cancelSubscriptionById(subscriptionId: string) {
+    const subscription = await this.prisma.companySubscription.findUnique({
+      where: { id: subscriptionId },
+      include: { plan: true },
+    });
+    if (!subscription) {
+      throw new NotFoundException('구독을 찾을 수 없습니다.');
+    }
+
+    const { companyId, status } = subscription;
+
+    if (status === 'ACTIVE') {
+      // ACTIVE → CANCELLED + cancelledAt 설정, 후속 구독 재개/활성화
+      await this.prisma.$transaction(async (tx) => {
+        await tx.companySubscription.update({
+          where: { id: subscriptionId },
+          data: { status: 'CANCELLED', cancelledAt: new Date() },
+        });
+
+        // PAUSED 재개 시도, 없으면 QUEUED 활성화
+        const resumed = await this.resumeHighestPausedSubscription(tx, companyId);
+        if (!resumed) {
+          await this.activateHighestQueuedSubscription(tx, companyId);
+        }
+      });
+    } else if (status === 'PAUSED') {
+      // PAUSED → EXPIRED + pausedAt null
+      await this.prisma.companySubscription.update({
+        where: { id: subscriptionId },
+        data: { status: 'EXPIRED', pausedAt: null },
+      });
+    } else if (status === 'QUEUED') {
+      // QUEUED → EXPIRED
+      await this.prisma.companySubscription.update({
+        where: { id: subscriptionId },
+        data: { status: 'EXPIRED' },
+      });
+    } else {
+      throw new BadRequestException(
+        `취소할 수 없는 상태입니다: ${status}`,
+      );
+    }
+
+    await this.redis.del(`subscription:active:${companyId}`);
+
+    return { message: '구독이 관리자에 의해 취소되었습니다.' };
+  }
+
   /** 관리자 구독 연장 */
   async extendSubscription(subscriptionId: string, months: number) {
     const subscription = await this.prisma.companySubscription.findUnique({
