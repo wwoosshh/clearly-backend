@@ -440,6 +440,21 @@ export class CompanyCustomerService {
 
     for (const userId of userIds) {
       try {
+        // 활성 채팅방 중 양측 거래취소된 방이 있는지 확인
+        const existingRoom = await this.prisma.chatRoom.findFirst({
+          where: { userId, companyId, isActive: true },
+          select: { userDeclined: true, companyDeclined: true },
+        });
+
+        if (existingRoom?.userDeclined && existingRoom?.companyDeclined) {
+          results.push({
+            userId,
+            success: false,
+            error: '거래가 종료된 고객입니다',
+          });
+          continue;
+        }
+
         // 채팅방 찾기/생성
         const room = await this.chatService.createRoom(userId, companyId);
         // 메시지 발송
