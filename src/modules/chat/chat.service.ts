@@ -25,6 +25,16 @@ export class ChatService {
 
   /** 채팅방 생성 (채팅상담 직접 클릭 시) */
   async createRoom(userId: string, companyId: string) {
+    // 업체 계정은 채팅방을 생성할 수 없음 (업체→업체 채팅 방지)
+    const requestingCompany = await this.prisma.company.findUnique({
+      where: { userId },
+    });
+    if (requestingCompany) {
+      throw new ForbiddenException(
+        '업체 계정으로는 채팅 상담을 시작할 수 없습니다.',
+      );
+    }
+
     // 이미 존재하는 채팅방 확인
     const existing = await this.prisma.chatRoom.findFirst({
       where: {
