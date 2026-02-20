@@ -600,6 +600,75 @@ export class EstimateService {
     return updated;
   }
 
+  /** 견적 비교 데이터 조회 (USER: 본인 견적요청에 대한 견적들 비교) */
+  async getEstimatesForComparison(requestId: string, userId: string) {
+    const request = await this.prisma.estimateRequest.findUnique({
+      where: { id: requestId },
+      include: {
+        estimates: {
+          include: {
+            company: {
+              select: {
+                id: true,
+                businessName: true,
+                specialties: true,
+                minPrice: true,
+                maxPrice: true,
+                totalMatchings: true,
+                responseTime: true,
+                isVerified: true,
+                averageRating: true,
+                totalReviews: true,
+                verificationStatus: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    if (!request) {
+      throw new NotFoundException('견적요청을 찾을 수 없습니다.');
+    }
+
+    if (request.userId !== userId) {
+      throw new ForbiddenException('본인의 견적요청만 비교할 수 있습니다.');
+    }
+
+    return {
+      request: {
+        id: request.id,
+        cleaningType: request.cleaningType,
+        address: request.address,
+        areaSize: request.areaSize,
+        budget: request.budget,
+        desiredDate: request.desiredDate,
+        status: request.status,
+      },
+      estimates: request.estimates.map((est) => ({
+        estimateId: est.id,
+        companyId: est.companyId,
+        businessName: est.company.businessName,
+        price: est.price,
+        estimatedDuration: est.estimatedDuration,
+        availableDate: est.availableDate,
+        message: est.message,
+        status: est.status,
+        averageRating: Number(est.company.averageRating ?? 0),
+        totalReviews: est.company.totalReviews,
+        totalMatchings: est.company.totalMatchings,
+        responseTime: est.company.responseTime,
+        isVerified: est.company.verificationStatus === 'APPROVED',
+        specialties: Array.isArray(est.company.specialties)
+          ? (est.company.specialties as string[])
+          : [],
+        minPrice: est.company.minPrice,
+        maxPrice: est.company.maxPrice,
+      })),
+    };
+  }
+
   /** Haversine 거리 계산 (km) */
   private haversineKm(
     lat1: number,

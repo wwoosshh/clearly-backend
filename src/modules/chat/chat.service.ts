@@ -45,10 +45,18 @@ export class ChatService {
       include: {
         company: { include: { user: true } },
         messages: { take: 1, orderBy: { createdAt: 'desc' } },
+        matching: { select: { status: true } },
       },
     });
 
-    if (existing) return existing;
+    // 거래완료되었거나 양측 모두 거래취소된 채팅방은 재사용하지 않고 새로 생성
+    if (
+      existing &&
+      existing.matching?.status !== 'COMPLETED' &&
+      !(existing.userDeclined && existing.companyDeclined)
+    ) {
+      return existing;
+    }
 
     // 채팅방 생성
     const chatRoom = await this.prisma.chatRoom.create({

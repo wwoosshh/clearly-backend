@@ -102,6 +102,18 @@ export class EstimateController {
     );
   }
 
+  @Get('requests/:id/compare')
+  @UseGuards(RolesGuard)
+  @Roles('USER')
+  @ApiOperation({ summary: '견적 비교 데이터 조회' })
+  @ApiResponse({ status: 200, description: '견적 비교 데이터 조회 성공' })
+  async getEstimatesForComparison(
+    @CurrentUser('id') userId: string,
+    @Param('id') requestId: string,
+  ) {
+    return this.estimateService.getEstimatesForComparison(requestId, userId);
+  }
+
   @Get('requests/:id')
   @ApiOperation({ summary: '견적요청 상세' })
   @ApiResponse({ status: 200, description: '견적요청 상세 조회 성공' })
