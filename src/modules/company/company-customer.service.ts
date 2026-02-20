@@ -35,21 +35,20 @@ export class CompanyCustomerService {
   ) {}
 
   private async buildCustomerRows(companyId: string): Promise<CustomerRow[]> {
-    // 1) 매칭을 통해 연결된 고객 ID 조회
-    const matchingUsers = await this.prisma.matching.findMany({
-      where: { companyId },
-      select: { userId: true },
-      distinct: ['userId'],
-    });
+    // 1) 고객 ID 수집 (2 queries)
+    const [matchingUsers, chatUsers] = await Promise.all([
+      this.prisma.matching.findMany({
+        where: { companyId },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      this.prisma.chatRoom.findMany({
+        where: { companyId },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+    ]);
 
-    // 2) 채팅방을 통해 연결된 고객 ID 조회
-    const chatUsers = await this.prisma.chatRoom.findMany({
-      where: { companyId },
-      select: { userId: true },
-      distinct: ['userId'],
-    });
-
-    // 3) 합집합 (unique userIds)
     const allUserIds = [
       ...new Set([
         ...matchingUsers.map((m) => m.userId),
@@ -61,31 +60,16 @@ export class CompanyCustomerService {
 
     const matchingUserIdSet = new Set(matchingUsers.map((m) => m.userId));
 
-    // 메모 배치 조회
-    const memos = await this.prisma.customerMemo.findMany({
-      where: { companyId, userId: { in: allUserIds } },
-    });
-    const memoMap = new Map(memos.map((m) => [m.userId, m]));
-
-    const customers: CustomerRow[] = [];
-
-    for (const userId of allUserIds) {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
+    // 2) 모든 데이터를 배치로 조회 (5 queries, 병렬 실행)
+    const [users, matchings, chatRooms, reviews, memos] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { id: { in: allUserIds } },
+        select: { id: true, name: true, phone: true, profileImage: true },
+      }),
+      this.prisma.matching.findMany({
+        where: { companyId, userId: { in: allUserIds } },
         select: {
-          id: true,
-          name: true,
-          phone: true,
-          profileImage: true,
-        },
-      });
-
-      if (!user) continue;
-
-      const matchings = await this.prisma.matching.findMany({
-        where: { companyId, userId },
-        select: {
-          id: true,
+          userId: true,
           status: true,
           cleaningType: true,
           address: true,
@@ -94,46 +78,76 @@ export class CompanyCustomerService {
           completedAt: true,
         },
         orderBy: { createdAt: 'desc' },
-      });
-
-      const chatRooms = await this.prisma.chatRoom.findMany({
-        where: { companyId, userId },
-        select: {
-          id: true,
-          lastSentAt: true,
-          createdAt: true,
-        },
+      }),
+      this.prisma.chatRoom.findMany({
+        where: { companyId, userId: { in: allUserIds } },
+        select: { userId: true, lastSentAt: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
-      });
-
-      const reviewAgg = await this.prisma.review.aggregate({
-        where: { companyId, userId },
+      }),
+      this.prisma.review.groupBy({
+        by: ['userId'],
+        where: { companyId, userId: { in: allUserIds } },
         _avg: { rating: true },
-      });
+      }),
+      this.prisma.customerMemo.findMany({
+        where: { companyId, userId: { in: allUserIds } },
+      }),
+    ]);
 
-      const totalMatchings = matchings.length;
-      const completedMatchings = matchings.filter(
+    // 3) O(1) 조회를 위한 Map 생성
+    const userMap = new Map(users.map((u) => [u.id, u]));
+    const memoMap = new Map(memos.map((m) => [m.userId, m]));
+    const reviewMap = new Map(
+      reviews.map((r) => [r.userId, r._avg.rating]),
+    );
+
+    const matchingsByUser = new Map<string, typeof matchings>();
+    for (const m of matchings) {
+      if (!matchingsByUser.has(m.userId)) matchingsByUser.set(m.userId, []);
+      matchingsByUser.get(m.userId)!.push(m);
+    }
+
+    const chatsByUser = new Map<string, typeof chatRooms>();
+    for (const c of chatRooms) {
+      if (!chatsByUser.has(c.userId)) chatsByUser.set(c.userId, []);
+      chatsByUser.get(c.userId)!.push(c);
+    }
+
+    // 4) 고객 행 생성 (DB 쿼리 없음, 순수 연산)
+    const customers: CustomerRow[] = [];
+
+    for (const userId of allUserIds) {
+      const user = userMap.get(userId);
+      if (!user) continue;
+
+      const userMatchings = matchingsByUser.get(userId) || [];
+      const userChats = chatsByUser.get(userId) || [];
+      const memo = memoMap.get(userId);
+
+      const totalMatchings = userMatchings.length;
+      const completedMatchings = userMatchings.filter(
         (m) => m.status === 'COMPLETED',
       ).length;
-      const inProgressMatchings = matchings.filter(
+      const inProgressMatchings = userMatchings.filter(
         (m) => m.status === 'REQUESTED' || m.status === 'ACCEPTED',
       ).length;
-      const totalRevenue = matchings
+      const totalRevenue = userMatchings
         .filter((m) => m.status === 'COMPLETED')
         .reduce((sum, m) => sum + (m.estimatedPrice || 0), 0);
 
       const lastMatchingDate =
-        matchings[0]?.completedAt || matchings[0]?.createdAt;
+        userMatchings[0]?.completedAt || userMatchings[0]?.createdAt;
       const lastChatDate =
-        chatRooms[0]?.lastSentAt || chatRooms[0]?.createdAt;
-      const dates = [lastMatchingDate, lastChatDate].filter(Boolean) as Date[];
+        userChats[0]?.lastSentAt || userChats[0]?.createdAt;
+      const dates = [lastMatchingDate, lastChatDate].filter(
+        Boolean,
+      ) as Date[];
       const lastInteractionAt =
         dates.length > 0
           ? new Date(Math.max(...dates.map((d) => d.getTime())))
           : new Date(0);
 
-      const latestMatching = matchings[0];
-      const memo = memoMap.get(userId);
+      const latestMatching = userMatchings[0];
 
       customers.push({
         userId: user.id,
@@ -146,7 +160,7 @@ export class CompanyCustomerService {
         completedMatchings,
         inProgressMatchings,
         totalRevenue,
-        averageRating: reviewAgg._avg.rating,
+        averageRating: reviewMap.get(userId) ?? null,
         lastInteractionAt,
         hasChatOnly: !matchingUserIdSet.has(userId),
         pipelineStage: memo?.pipelineStage || PipelineStage.LEAD,
@@ -376,29 +390,37 @@ export class CompanyCustomerService {
         : 0;
     const totalRevenue = customers.reduce((sum, c) => sum + c.totalRevenue, 0);
 
-    // 월별 매출 트렌드 (최근 6개월)
-    const monthlyRevenue: { month: string; revenue: number }[] = [];
+    // 월별 매출 트렌드 (최근 6개월) — 단일 쿼리로 최적화
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const completedMatchings = await this.prisma.matching.findMany({
+      where: {
+        companyId,
+        status: 'COMPLETED',
+        completedAt: { gte: sixMonthsAgo },
+      },
+      select: { estimatedPrice: true, completedAt: true },
+    });
+
+    const monthlyRevenueMap = new Map<string, number>();
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const start = new Date(d.getFullYear(), d.getMonth(), 1);
-      const end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-
-      const matchings = await this.prisma.matching.findMany({
-        where: {
-          companyId,
-          status: 'COMPLETED',
-          completedAt: { gte: start, lt: end },
-        },
-        select: { estimatedPrice: true },
-      });
-
-      const revenue = matchings.reduce(
-        (sum, m) => sum + (m.estimatedPrice || 0),
-        0,
-      );
       const label = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`;
-      monthlyRevenue.push({ month: label, revenue });
+      monthlyRevenueMap.set(label, 0);
     }
+    for (const m of completedMatchings) {
+      if (!m.completedAt) continue;
+      const d = new Date(m.completedAt);
+      const label = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (monthlyRevenueMap.has(label)) {
+        monthlyRevenueMap.set(
+          label,
+          monthlyRevenueMap.get(label)! + (m.estimatedPrice || 0),
+        );
+      }
+    }
+    const monthlyRevenue = Array.from(monthlyRevenueMap.entries()).map(
+      ([month, revenue]) => ({ month, revenue }),
+    );
 
     // 매출 TOP 5
     const topCustomers = [...customers]
