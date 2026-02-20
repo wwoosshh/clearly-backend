@@ -616,7 +616,6 @@ export class EstimateService {
                 maxPrice: true,
                 totalMatchings: true,
                 responseTime: true,
-                isVerified: true,
                 averageRating: true,
                 totalReviews: true,
                 verificationStatus: true,
