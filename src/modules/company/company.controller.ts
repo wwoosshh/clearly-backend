@@ -4,6 +4,7 @@ import {
   Post,
   Put,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -22,6 +23,10 @@ import { CompanyCustomerService } from './company-customer.service';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { SearchCompanyDto } from './dto/search-company.dto';
 import { GetCustomersDto } from './dto/get-customers.dto';
+import { UpdateCustomerStageDto } from './dto/update-customer-stage.dto';
+import { UpdateCustomerTagsDto } from './dto/update-customer-tags.dto';
+import { BatchMessageDto } from './dto/batch-message.dto';
+import { ManageTagDto } from './dto/manage-tag.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -71,6 +76,69 @@ export class CompanyController {
     return this.companyMetricsService.getCompanyMetrics(company.id);
   }
 
+  @Get('my/tags')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '태그 프리셋 목록 조회' })
+  async getMyTags(@CurrentUser('id') userId: string) {
+    const company = await this.companyService.getMyCompany(userId);
+    return this.companyCustomerService.getCompanyTags(company.id);
+  }
+
+  @Post('my/tags')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '태그 생성' })
+  async createMyTag(
+    @CurrentUser('id') userId: string,
+    @Body() dto: ManageTagDto,
+  ) {
+    const company = await this.companyService.getMyCompany(userId);
+    return this.companyCustomerService.createCompanyTag(
+      company.id,
+      dto.name,
+      dto.color,
+    );
+  }
+
+  @Delete('my/tags/:tagId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '태그 삭제' })
+  async deleteMyTag(
+    @CurrentUser('id') userId: string,
+    @Param('tagId') tagId: string,
+  ) {
+    const company = await this.companyService.getMyCompany(userId);
+    return this.companyCustomerService.deleteCompanyTag(company.id, tagId);
+  }
+
+  @Get('my/customers/pipeline')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '고객 파이프라인 (칸반) 뷰' })
+  async getMyCustomersPipeline(
+    @CurrentUser('id') userId: string,
+    @Query('search') search?: string,
+    @Query('tag') tag?: string,
+  ) {
+    const company = await this.companyService.getMyCompany(userId);
+    return this.companyCustomerService.getCustomersPipeline(
+      company.id,
+      search,
+      tag,
+    );
+  }
+
+  @Get('my/customers/stats')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '고객 통계 대시보드' })
+  async getMyCustomerStats(@CurrentUser('id') userId: string) {
+    const company = await this.companyService.getMyCompany(userId);
+    return this.companyCustomerService.getCustomerStats(company.id);
+  }
+
   @Get('my/customers')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -84,6 +152,57 @@ export class CompanyController {
     return this.companyCustomerService.getCustomers(company.id, dto);
   }
 
+  @Patch('my/customers/:userId/stage')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '고객 파이프라인 단계 변경' })
+  async updateCustomerStage(
+    @CurrentUser('id') currentUserId: string,
+    @Param('userId') targetUserId: string,
+    @Body() dto: UpdateCustomerStageDto,
+  ) {
+    const company = await this.companyService.getMyCompany(currentUserId);
+    return this.companyCustomerService.updateCustomerStage(
+      company.id,
+      targetUserId,
+      dto.stage,
+    );
+  }
+
+  @Patch('my/customers/:userId/tags')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '고객 태그 변경' })
+  async updateCustomerTags(
+    @CurrentUser('id') currentUserId: string,
+    @Param('userId') targetUserId: string,
+    @Body() dto: UpdateCustomerTagsDto,
+  ) {
+    const company = await this.companyService.getMyCompany(currentUserId);
+    return this.companyCustomerService.updateCustomerTags(
+      company.id,
+      targetUserId,
+      dto.tags,
+    );
+  }
+
+  @Post('my/customers/batch-message')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '고객 일괄 메시지 발송' })
+  async sendBatchMessage(
+    @CurrentUser('id') currentUserId: string,
+    @Body() dto: BatchMessageDto,
+  ) {
+    const company = await this.companyService.getMyCompany(currentUserId);
+    return this.companyCustomerService.sendBatchMessage(
+      company.id,
+      currentUserId,
+      dto.userIds,
+      dto.content,
+    );
+  }
+
   @Get('my/customers/:userId')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -94,7 +213,10 @@ export class CompanyController {
     @Param('userId') targetUserId: string,
   ) {
     const company = await this.companyService.getMyCompany(currentUserId);
-    return this.companyCustomerService.getCustomerDetail(company.id, targetUserId);
+    return this.companyCustomerService.getCustomerDetail(
+      company.id,
+      targetUserId,
+    );
   }
 
   @Put('my/customers/:userId/memo')
@@ -108,7 +230,11 @@ export class CompanyController {
     @Body('content') content: string,
   ) {
     const company = await this.companyService.getMyCompany(currentUserId);
-    return this.companyCustomerService.upsertMemo(company.id, targetUserId, content);
+    return this.companyCustomerService.upsertMemo(
+      company.id,
+      targetUserId,
+      content,
+    );
   }
 
   @Get(':id/metrics')

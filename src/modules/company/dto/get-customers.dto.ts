@@ -1,5 +1,6 @@
 import { IsOptional, IsEnum, IsString, IsInt, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
+import { PipelineStage } from '@prisma/client';
 
 export enum CustomerSegment {
   ALL = 'all',
@@ -40,4 +41,12 @@ export class GetCustomersDto {
   @IsOptional()
   @IsEnum(CustomerSort)
   sort?: CustomerSort = CustomerSort.RECENT;
+
+  @IsOptional()
+  @IsEnum(PipelineStage)
+  stage?: PipelineStage;
+
+  @IsOptional()
+  @IsString()
+  tag?: string;
 }

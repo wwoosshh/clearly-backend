@@ -153,6 +153,14 @@ enum DevicePlatform {
   WEB
 }
 
+enum PipelineStage {
+  LEAD
+  CONSULTING
+  BOOKED
+  COMPLETED
+  VIP
+}
+
 
 // ==================
 // Models
@@ -265,6 +273,7 @@ model Company {
   subscriptions CompanySubscription[]
   estimates     Estimate[]
   customerMemos CustomerMemo[]
+  companyTags   CompanyTag[]
 
   @@index([verificationStatus])
   @@index([averageRating(sort: Desc)])
@@ -601,17 +610,34 @@ model DeviceToken {
 }
 
 model CustomerMemo {
-  id        String   @id @default(uuid())
-  companyId String   @map("company_id")
-  userId    String   @map("user_id")
-  content   String   @db.Text
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id            String        @id @default(uuid())
+  companyId     String        @map("company_id")
+  userId        String        @map("user_id")
+  content       String        @db.Text
+  pipelineStage PipelineStage @default(LEAD) @map("pipeline_stage")
+  tags          String[]      @default([])
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, userId])
   @@index([companyId])
+  @@index([companyId, pipelineStage])
   @@map("customer_memos")
+}
+
+model CompanyTag {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String   @db.VarChar(50)
+  color     String   @default("#6b7280") @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("company_tags")
 }
