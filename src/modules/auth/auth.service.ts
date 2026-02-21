@@ -319,6 +319,7 @@ export class AuthService {
         phone: true,
         profileImage: true,
         role: true,
+        agreeMarketing: true,
         createdAt: true,
       },
     });

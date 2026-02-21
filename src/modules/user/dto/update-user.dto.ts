@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString, IsBoolean, MaxLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateUserDto {
@@ -17,4 +17,9 @@ export class UpdateUserDto {
   @IsString({ message: '프로필 이미지 URL은 문자열이어야 합니다.' })
   @IsOptional()
   profileImage?: string;
+
+  @ApiPropertyOptional({ description: '마케팅 수신 동의', example: false })
+  @IsBoolean({ message: '마케팅 수신 동의는 boolean이어야 합니다.' })
+  @IsOptional()
+  agreeMarketing?: boolean;
 }

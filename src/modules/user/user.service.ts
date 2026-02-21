@@ -19,6 +19,7 @@ export class UserService {
         profileImage: true,
         role: true,
         isActive: true,
+        agreeMarketing: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -38,9 +39,17 @@ export class UserService {
       throw new NotFoundException('사용자를 찾을 수 없습니다.');
     }
 
+    const { agreeMarketing, ...rest } = updateData;
+
+    const data: Record<string, any> = { ...rest };
+    if (agreeMarketing !== undefined) {
+      data.agreeMarketing = agreeMarketing;
+      data.marketingConsentAt = agreeMarketing ? new Date() : null;
+    }
+
     return this.prisma.user.update({
       where: { id },
-      data: updateData,
+      data,
       select: {
         id: true,
         email: true,
@@ -49,6 +58,7 @@ export class UserService {
         profileImage: true,
         role: true,
         isActive: true,
+        agreeMarketing: true,
         updatedAt: true,
       },
     });
