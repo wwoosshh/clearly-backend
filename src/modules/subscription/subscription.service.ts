@@ -574,15 +574,12 @@ export class SubscriptionService {
     };
   }
 
-  /** 견적 제출 카운터 증가 */
+  /** 견적 제출 카운터 증가 (원자적 INCR) */
   async incrementEstimateCount(companyId: string): Promise<void> {
     const today = this.getKSTDateString();
     const redisKey = `estimate:daily:${companyId}:${today}`;
-    const current = (await this.redis.get<number>(redisKey)) || 0;
-
-    // KST 자정까지 남은 초 계산
     const ttl = this.getSecondsUntilKSTMidnight();
-    await this.redis.set(redisKey, current + 1, ttl);
+    await this.redis.incr(redisKey, ttl);
   }
 
   /** 만료 구독 처리 + 자동 재개/활성화 (cron용) */

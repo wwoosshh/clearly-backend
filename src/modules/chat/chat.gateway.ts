@@ -23,7 +23,7 @@ import { ConnectionManager } from '../../common/websocket/connection-manager';
       if (!origin || allowed.includes(origin)) {
         callback(null, true);
       } else {
-        callback(null, true); // 모바일 앱은 origin이 없을 수 있음
+        callback(new Error('Not allowed by CORS'));
       }
     },
     credentials: true,
@@ -77,7 +77,7 @@ export class ChatGateway
       }
 
       const payload = this.jwtService.verify(token, {
-        secret: this.configService.get('JWT_ACCESS_SECRET'),
+        secret: this.configService.getOrThrow('JWT_ACCESS_SECRET'),
       });
 
       (client as any).userId = payload.sub;

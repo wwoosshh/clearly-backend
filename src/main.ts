@@ -63,15 +63,17 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new TransformInterceptor());
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('BarunOrder API')
-    .setDescription('이사청소 매칭 플랫폼 바른오더 API')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
+  if (configService.get('NODE_ENV') !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('BarunOrder API')
+      .setDescription('이사청소 매칭 플랫폼 바른오더 API')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document);
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   // Graceful Shutdown
   app.enableShutdownHooks();

@@ -112,6 +112,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '토큰 갱신' })
   @ApiResponse({ status: 200, description: '토큰 갱신 성공' })
@@ -133,6 +134,7 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '비밀번호 재설정' })
   @ApiResponse({ status: 200, description: '비밀번호 변경 성공' })
@@ -187,10 +189,12 @@ export class AuthController {
       });
       return res.redirect(`${frontendUrl}/auth/callback?${params.toString()}`);
     } catch (err: any) {
-      const message = encodeURIComponent(
-        err.message || '소셜 로그인에 실패했습니다.',
-      );
-      return res.redirect(`${frontendUrl}/login?error=${message}`);
+      // 사용자 친화적 메시지만 전달 (내부 에러 메시지 노출 방지)
+      let userMessage = '소셜 로그인에 실패했습니다.';
+      if (err?.status === 409) {
+        userMessage = err.message || '이미 가입된 계정이 있습니다.';
+      }
+      return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(userMessage)}`);
     }
   }
 

@@ -97,10 +97,15 @@ export class ReviewController {
   }
 
   @Post(':id/helpful')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: '도움이 됐어요 투표' })
   @ApiResponse({ status: 200, description: '투표 성공' })
-  async markHelpful(@Param('id') reviewId: string) {
-    return this.reviewService.markHelpful(reviewId);
+  async markHelpful(
+    @Param('id') reviewId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.reviewService.markHelpful(reviewId, userId);
   }
 
   @Delete(':id')

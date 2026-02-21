@@ -232,9 +232,7 @@ export class AuthService {
   async refreshToken(refreshToken: string) {
     try {
       const payload = await this.jwtService.verifyAsync(refreshToken, {
-        secret:
-          this.configService.get('JWT_REFRESH_SECRET') ||
-          'default-refresh-secret',
+        secret: this.configService.getOrThrow('JWT_REFRESH_SECRET'),
       });
 
       // DB에서 토큰 + 유저를 단일 쿼리로 조회
@@ -652,13 +650,11 @@ export class AuthService {
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret: this.configService.get('JWT_ACCESS_SECRET') || 'default-secret',
+        secret: this.configService.getOrThrow('JWT_ACCESS_SECRET'),
         expiresIn: 900, // 15 minutes
       }),
       this.jwtService.signAsync(payload, {
-        secret:
-          this.configService.get('JWT_REFRESH_SECRET') ||
-          'default-refresh-secret',
+        secret: this.configService.getOrThrow('JWT_REFRESH_SECRET'),
         expiresIn: 604800, // 7 days
       }),
     ]);

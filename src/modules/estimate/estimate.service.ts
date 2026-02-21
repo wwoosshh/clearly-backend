@@ -228,7 +228,7 @@ export class EstimateService {
   }
 
   /** 견적요청 상세 */
-  async getEstimateRequestById(id: string) {
+  async getEstimateRequestById(id: string, userId: string, role: string) {
     const request = await this.prisma.estimateRequest.findUnique({
       where: { id },
       include: {
@@ -252,6 +252,23 @@ export class EstimateService {
 
     if (!request) {
       throw new NotFoundException('견적요청을 찾을 수 없습니다.');
+    }
+
+    // 권한 체크: USER는 본인 요청만, COMPANY는 OPEN이거나 본사가 견적 제출한 요청만
+    if (role === 'USER' && request.userId !== userId) {
+      throw new ForbiddenException('본인의 견적요청만 조회할 수 있습니다.');
+    }
+    if (role === 'COMPANY') {
+      const company = await this.prisma.company.findUnique({
+        where: { userId },
+        select: { id: true },
+      });
+      const hasSubmitted = company
+        ? request.estimates.some((e) => e.companyId === company.id)
+        : false;
+      if (request.status !== 'OPEN' && !hasSubmitted) {
+        throw new ForbiddenException('열린 견적요청이거나 본사가 견적을 제출한 요청만 조회할 수 있습니다.');
+      }
     }
 
     return request;
@@ -318,28 +335,36 @@ export class EstimateService {
       );
     }
 
-    // 견적 생성
-    const estimate = await this.prisma.estimate.create({
-      data: {
-        estimateRequestId,
-        companyId: company.id,
-        price: dto.price,
-        message: dto.message,
-        estimatedDuration: dto.estimatedDuration,
-        availableDate: dto.availableDate
-          ? new Date(dto.availableDate)
-          : undefined,
-        images: dto.images,
-      },
-      include: {
-        company: {
-          select: { id: true, businessName: true },
+    // 견적 생성 (unique 제약조건으로 동시 중복 제출 방지)
+    let estimate;
+    try {
+      estimate = await this.prisma.estimate.create({
+        data: {
+          estimateRequestId,
+          companyId: company.id,
+          price: dto.price,
+          message: dto.message,
+          estimatedDuration: dto.estimatedDuration,
+          availableDate: dto.availableDate
+            ? new Date(dto.availableDate)
+            : undefined,
+          images: dto.images,
         },
-        estimateRequest: {
-          select: { id: true, cleaningType: true, address: true, userId: true },
+        include: {
+          company: {
+            select: { id: true, businessName: true },
+          },
+          estimateRequest: {
+            select: { id: true, cleaningType: true, address: true, userId: true },
+          },
         },
-      },
-    });
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw new BadRequestException('이미 견적을 제출하셨습니다.');
+      }
+      throw err;
+    }
 
     // 일일 카운터 증가
     await this.subscriptionService.incrementEstimateCount(company.id);

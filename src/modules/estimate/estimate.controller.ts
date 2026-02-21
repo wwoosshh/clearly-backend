@@ -117,8 +117,11 @@ export class EstimateController {
   @Get('requests/:id')
   @ApiOperation({ summary: '견적요청 상세' })
   @ApiResponse({ status: 200, description: '견적요청 상세 조회 성공' })
-  async getEstimateRequestById(@Param('id') id: string) {
-    return this.estimateService.getEstimateRequestById(id);
+  async getEstimateRequestById(
+    @CurrentUser() user: { id: string; role: string },
+    @Param('id') id: string,
+  ) {
+    return this.estimateService.getEstimateRequestById(id, user.id, user.role);
   }
 
   @Post('requests/:id/submit')

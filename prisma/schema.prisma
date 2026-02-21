@@ -535,11 +535,11 @@ model Estimate {
   matching        Matching?
   chatRoom        ChatRoom?
 
+  @@unique([estimateRequestId, companyId])
   @@index([estimateRequestId])
   @@index([companyId])
   @@index([companyId, status])
   @@index([status, createdAt])
-  @@index([estimateRequestId, companyId])
   @@map("estimates")
 }
 

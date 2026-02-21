@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -355,7 +356,7 @@ export class ReviewService {
   }
 
   /** 도움이 됐어요 투표 */
-  async markHelpful(reviewId: string) {
+  async markHelpful(reviewId: string, userId: string) {
     const review = await this.prisma.review.findUnique({
       where: { id: reviewId },
     });
@@ -364,11 +365,20 @@ export class ReviewService {
       throw new NotFoundException('리뷰를 찾을 수 없습니다.');
     }
 
+    // Redis 기반 중복 투표 방지
+    const voteKey = `review:helpful:${reviewId}:${userId}`;
+    const alreadyVoted = await this.redis.get(voteKey);
+    if (alreadyVoted) {
+      throw new ConflictException('이미 투표한 리뷰입니다.');
+    }
+
     const updated = await this.prisma.review.update({
       where: { id: reviewId },
       data: { helpfulCount: { increment: 1 } },
     });
 
+    // 투표 기록 저장 (30일 TTL)
+    await this.redis.set(voteKey, '1', 60 * 60 * 24 * 30);
     await this.redis.delPattern(`review:company:${review.companyId}:*`);
     return updated;
   }

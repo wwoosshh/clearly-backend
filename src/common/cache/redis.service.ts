@@ -66,6 +66,21 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** 원자적 증가 (INCR) — 카운터 용도 */
+  async incr(key: string, ttlSeconds?: number): Promise<number> {
+    if (!this.isConnected()) return 0;
+    try {
+      const value = await this.client.incr(key);
+      // 첫 증가 시(값이 1) TTL 설정
+      if (value === 1 && ttlSeconds) {
+        await this.client.expire(key, ttlSeconds);
+      }
+      return value;
+    } catch {
+      return 0;
+    }
+  }
+
   async delPattern(pattern: string): Promise<void> {
     if (!this.isConnected()) return;
     try {
