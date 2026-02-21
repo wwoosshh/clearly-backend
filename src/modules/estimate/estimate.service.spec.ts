@@ -521,6 +521,8 @@ describe('EstimateService', () => {
 
       const result = await service.getEstimateRequestById(
         mockEstimateRequest.id,
+        'user-uuid-1',
+        'USER',
       );
       expect(result.id).toBe(mockEstimateRequest.id);
     });
@@ -529,7 +531,7 @@ describe('EstimateService', () => {
       prisma.estimateRequest.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.getEstimateRequestById('unknown-id'),
+        service.getEstimateRequestById('unknown-id', 'user-uuid-1', 'USER'),
       ).rejects.toThrow(NotFoundException);
     });
   });

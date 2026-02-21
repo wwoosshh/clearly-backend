@@ -19,13 +19,17 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @ApiTags('매칭')
 @Controller('matchings')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class MatchingController {
-  constructor(private readonly matchingService: MatchingService) {}
+  constructor(
+    private readonly matchingService: MatchingService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Post('requests')
   @ApiOperation({ summary: '매칭 요청 생성' })
@@ -47,6 +51,14 @@ export class MatchingController {
   ) {
     if (user.role === 'USER') {
       filters.userId = userId;
+    } else if (user.role === 'COMPANY') {
+      const company = await this.prisma.company.findFirst({
+        where: { userId },
+        select: { id: true },
+      });
+      if (company) {
+        filters.companyId = company.id;
+      }
     }
     return this.matchingService.findRequests(filters);
   }
