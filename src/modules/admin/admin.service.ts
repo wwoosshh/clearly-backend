@@ -641,29 +641,32 @@ export class AdminService {
       this.prisma.report.count({ where }),
     ]);
 
-    // Resolve target entities
-    const reportsWithTargets = await Promise.all(
-      reports.map(async (report) => {
-        let target: any = null;
-        if (report.targetType === 'USER') {
-          target = await this.prisma.user.findUnique({
-            where: { id: report.targetId },
-            select: { id: true, name: true, email: true },
-          });
-        } else if (report.targetType === 'COMPANY') {
-          target = await this.prisma.company.findUnique({
-            where: { id: report.targetId },
-            select: { id: true, businessName: true },
-          });
-        } else if (report.targetType === 'REVIEW') {
-          target = await this.prisma.review.findUnique({
-            where: { id: report.targetId },
-            select: { id: true, content: true, rating: true },
-          });
-        }
-        return { ...report, target };
-      }),
-    );
+    // 타입별 ID 수집 후 배치 로딩 (N+1 방지)
+    const userIds = reports.filter((r) => r.targetType === 'USER').map((r) => r.targetId);
+    const companyIds = reports.filter((r) => r.targetType === 'COMPANY').map((r) => r.targetId);
+    const reviewIds = reports.filter((r) => r.targetType === 'REVIEW').map((r) => r.targetId);
+
+    const [users, companies, reviews] = await Promise.all([
+      userIds.length > 0
+        ? this.prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } })
+        : ([] as { id: string; name: string; email: string }[]),
+      companyIds.length > 0
+        ? this.prisma.company.findMany({ where: { id: { in: companyIds } }, select: { id: true, businessName: true } })
+        : ([] as { id: string; businessName: string }[]),
+      reviewIds.length > 0
+        ? this.prisma.review.findMany({ where: { id: { in: reviewIds } }, select: { id: true, content: true, rating: true } })
+        : ([] as { id: string; content: string | null; rating: number }[]),
+    ]);
+
+    const targetMap = new Map<string, any>();
+    for (const u of users) targetMap.set(u.id, u);
+    for (const c of companies) targetMap.set(c.id, c);
+    for (const r of reviews) targetMap.set(r.id, r);
+
+    const reportsWithTargets = reports.map((report) => ({
+      ...report,
+      target: targetMap.get(report.targetId) || null,
+    }));
 
     return {
       data: reportsWithTargets,

@@ -55,53 +55,59 @@ export class ReviewService {
     if (!matching.companyId) {
       throw new BadRequestException('업체 정보가 없는 매칭입니다.');
     }
+    const companyId = matching.companyId;
 
-    const review = await this.prisma.review.create({
-      data: {
-        matchingId: dto.matchingId,
-        userId,
-        companyId: matching.companyId,
-        rating: dto.rating,
-        qualityRating: dto.qualityRating,
-        priceRating: dto.priceRating,
-        punctualityRating: dto.punctualityRating,
-        kindnessRating: dto.kindnessRating,
-        content: dto.content,
-        images: dto.images,
-      },
-      include: {
-        user: { select: { id: true, name: true } },
-        company: { select: { id: true, businessName: true } },
-        matching: {
-          select: {
-            id: true,
-            cleaningType: true,
-            address: true,
-            estimatedPrice: true,
+    // 리뷰 생성 + 업체 평점 갱신을 트랜잭션으로 묶어 Race Condition 방지
+    const review = await this.prisma.$transaction(async (tx) => {
+      const createdReview = await tx.review.create({
+        data: {
+          matchingId: dto.matchingId,
+          userId,
+          companyId,
+          rating: dto.rating,
+          qualityRating: dto.qualityRating,
+          priceRating: dto.priceRating,
+          punctualityRating: dto.punctualityRating,
+          kindnessRating: dto.kindnessRating,
+          content: dto.content,
+          images: dto.images,
+        },
+        include: {
+          user: { select: { id: true, name: true } },
+          company: { select: { id: true, businessName: true } },
+          matching: {
+            select: {
+              id: true,
+              cleaningType: true,
+              address: true,
+              estimatedPrice: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    // 업체 평균 평점 및 리뷰 수 증분 갱신
-    const companyData = await this.prisma.company.findUnique({
-      where: { id: matching.companyId },
-      select: { averageRating: true, totalReviews: true },
-    });
-    const oldAvg = Number(companyData?.averageRating ?? 0);
-    const oldCount = companyData?.totalReviews ?? 0;
-    const newCount = oldCount + 1;
-    const newAvg = parseFloat(
-      ((oldAvg * oldCount + dto.rating) / newCount).toFixed(2),
-    );
+      // 업체 평균 평점 및 리뷰 수 원자적 갱신
+      const companyData = await tx.company.findUnique({
+        where: { id: companyId },
+        select: { averageRating: true, totalReviews: true },
+      });
+      const oldAvg = Number(companyData?.averageRating ?? 0);
+      const oldCount = companyData?.totalReviews ?? 0;
+      const newCount = oldCount + 1;
+      const newAvg = parseFloat(
+        ((oldAvg * oldCount + dto.rating) / newCount).toFixed(2),
+      );
 
-    await this.prisma.company.update({
-      where: { id: matching.companyId },
-      data: { averageRating: newAvg, totalReviews: newCount },
+      await tx.company.update({
+        where: { id: companyId },
+        data: { averageRating: newAvg, totalReviews: newCount },
+      });
+
+      return createdReview;
     });
 
     // 리뷰 캐시 무효화
-    await this.redis.delPattern(`review:company:${matching.companyId}:*`);
+    await this.redis.delPattern(`review:company:${companyId}:*`);
 
     this.logger.log(
       `리뷰 작성: id=${review.id}, matchingId=${dto.matchingId}, rating=${dto.rating}`,
@@ -109,7 +115,7 @@ export class ReviewService {
 
     // 업체에게 새 리뷰 알림
     const companyWithUser = await this.prisma.company.findUnique({
-      where: { id: matching.companyId },
+      where: { id: companyId },
       select: { userId: true, id: true },
     });
     if (companyWithUser) {

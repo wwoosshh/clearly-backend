@@ -152,7 +152,7 @@ export class AuthController {
     @Res() res: Response,
   ) {
     const callbackUrl = `${req.protocol}://${req.get('host')}/api/auth/oauth/${provider}/callback`;
-    const url = this.authService.getOAuthUrl(provider, callbackUrl);
+    const url = await this.authService.getOAuthUrl(provider, callbackUrl);
     return res.redirect(url);
   }
 
@@ -187,6 +187,9 @@ export class AuthController {
         accessToken: result.tokens.accessToken,
         refreshToken: result.tokens.refreshToken,
       });
+      if (result.isNewUser) {
+        params.set('isNewUser', 'true');
+      }
       return res.redirect(`${frontendUrl}/auth/callback?${params.toString()}`);
     } catch (err: any) {
       // 사용자 친화적 메시지만 전달 (내부 에러 메시지 노출 방지)

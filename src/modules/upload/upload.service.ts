@@ -16,6 +16,7 @@ export interface UploadResult {
 }
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const ALLOWED_FORMATS = ['jpeg', 'png', 'webp'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_FILES = 10;
 const THUMBNAIL_WIDTH = 400;
@@ -40,7 +41,7 @@ export class UploadService {
     }
   }
 
-  validateFile(file: Express.Multer.File): void {
+  async validateFile(file: Express.Multer.File): Promise<void> {
     if (!file) {
       throw new BadRequestException('파일이 제공되지 않았습니다.');
     }
@@ -51,6 +52,21 @@ export class UploadService {
     }
     if (file.size > MAX_FILE_SIZE) {
       throw new BadRequestException('파일 크기는 10MB를 초과할 수 없습니다.');
+    }
+
+    // 실제 파일 콘텐츠 검증 (MIME 스푸핑 방지)
+    try {
+      const metadata = await sharp(file.buffer).metadata();
+      if (!metadata.format || !ALLOWED_FORMATS.includes(metadata.format)) {
+        throw new BadRequestException(
+          '파일 내용이 허용된 이미지 형식(JPEG, PNG, WebP)이 아닙니다.',
+        );
+      }
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
+      throw new BadRequestException(
+        '유효하지 않은 이미지 파일입니다.',
+      );
     }
   }
 
@@ -79,7 +95,7 @@ export class UploadService {
     userId: string,
     category: string = 'chat',
   ): Promise<UploadResult> {
-    this.validateFile(file);
+    await this.validateFile(file);
 
     if (!this.supabase) {
       throw new InternalServerErrorException(

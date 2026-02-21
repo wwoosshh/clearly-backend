@@ -8,6 +8,7 @@ import {
   ArrayMaxSize,
   Min,
   MaxLength,
+  Matches,
 } from 'class-validator';
 
 export class SubmitEstimateDto {
@@ -19,6 +20,7 @@ export class SubmitEstimateDto {
   @ApiPropertyOptional({ description: '메시지' })
   @IsOptional()
   @IsString()
+  @MaxLength(2000, { message: '메시지는 최대 2000자까지 가능합니다.' })
   message?: string;
 
   @ApiPropertyOptional({ description: '예상 소요시간' })
@@ -30,6 +32,9 @@ export class SubmitEstimateDto {
   @ApiPropertyOptional({ description: '가능 날짜 (YYYY-MM-DD)' })
   @IsOptional()
   @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: '날짜는 YYYY-MM-DD 형식이어야 합니다.',
+  })
   availableDate?: string;
 
   @ApiPropertyOptional({ description: '참고 이미지 URL 배열', type: [String] })

@@ -358,16 +358,21 @@ export class CompanyService {
       startIndex + limit,
     );
 
-    const scoreUpdates = paginatedData.map((c: any) =>
-      this.prisma.company.update({
-        where: { id: c.id },
-        data: {
-          searchScore: c.baseScore,
-          searchScoreAt: new Date(),
-        },
-      }),
-    );
-    Promise.allSettled(scoreUpdates).catch(() => {});
+    // 검색 점수 배치 업데이트 (단일 트랜잭션)
+    const companyIds = paginatedData.map((c: any) => c.id);
+    if (companyIds.length > 0) {
+      this.prisma.$transaction(
+        paginatedData.map((c: any) =>
+          this.prisma.company.update({
+            where: { id: c.id },
+            data: {
+              searchScore: c.baseScore,
+              searchScoreAt: new Date(),
+            },
+          }),
+        ),
+      ).catch(() => {});
+    }
 
     return {
       data: paginatedData,

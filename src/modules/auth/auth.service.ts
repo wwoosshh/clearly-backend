@@ -220,6 +220,8 @@ export class AuthService {
         id: user.id,
         email: user.email,
         name: user.name,
+        phone: user.phone,
+        profileImage: user.profileImage,
         role: user.role,
       },
       tokens,
@@ -321,6 +323,7 @@ export class AuthService {
         role: true,
         agreeMarketing: true,
         createdAt: true,
+        updatedAt: true,
       },
     });
 
@@ -681,7 +684,7 @@ export class AuthService {
   }
 
   /** OAuth 인가 URL 생성 */
-  getOAuthUrl(provider: string, callbackUrl: string): string {
+  async getOAuthUrl(provider: string, callbackUrl: string): Promise<string> {
     switch (provider) {
       case 'kakao': {
         const clientId = this.configService.get('KAKAO_REST_API_KEY');
@@ -690,6 +693,8 @@ export class AuthService {
       case 'naver': {
         const clientId = this.configService.get('NAVER_CLIENT_ID');
         const state = crypto.randomBytes(16).toString('hex');
+        // CSRF 방지: state를 Redis에 5분간 저장
+        await this.redis.set(`oauth:state:${state}`, '1', 300);
         return `https://nid.naver.com/oauth2.0/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&state=${state}`;
       }
       case 'google': {
@@ -713,8 +718,18 @@ export class AuthService {
     switch (provider) {
       case 'kakao':
         return this.kakaoLogin({ code, redirectUri: callbackUrl });
-      case 'naver':
-        return this.naverLogin({ code, state: state || '' });
+      case 'naver': {
+        // CSRF 방지: Redis에 저장된 state 검증
+        if (!state) {
+          throw new BadRequestException('OAuth state 파라미터가 누락되었습니다.');
+        }
+        const storedState = await this.redis.get(`oauth:state:${state}`);
+        if (!storedState) {
+          throw new BadRequestException('유효하지 않거나 만료된 OAuth state입니다.');
+        }
+        await this.redis.del(`oauth:state:${state}`);
+        return this.naverLogin({ code, state });
+      }
       case 'google':
         return this.googleLogin({ code, redirectUri: callbackUrl });
       default:

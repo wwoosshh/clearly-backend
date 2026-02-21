@@ -358,7 +358,9 @@ model ChatMessage {
   sender User     @relation(fields: [senderId], references: [id])
 
   @@index([roomId, createdAt(sort: Desc)])
+  @@index([roomId, isRead, senderId])
   @@index([senderId])
+  @@index([senderId, messageType])
   @@map("chat_messages")
 }
 
@@ -430,6 +432,7 @@ model CompanySubscription {
 
   @@index([companyId])
   @@index([status])
+  @@index([companyId, status])
   @@index([currentPeriodEnd])
   @@map("company_subscriptions")
 }
@@ -539,6 +542,7 @@ model Estimate {
 
   @@unique([estimateRequestId, companyId])
   @@index([estimateRequestId])
+  @@index([estimateRequestId, status])
   @@index([companyId])
   @@index([companyId, status])
   @@index([status, createdAt])

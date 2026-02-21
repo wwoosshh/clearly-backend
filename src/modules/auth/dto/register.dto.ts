@@ -36,9 +36,12 @@ export class RegisterDto {
   @MaxLength(30, { message: '이름은 최대 30자까지 가능합니다.' })
   name: string;
 
-  @ApiProperty({ description: '전화번호', example: '010-1234-5678' })
+  @ApiProperty({ description: '전화번호', example: '01012345678' })
   @IsString({ message: '전화번호는 문자열이어야 합니다.' })
   @IsNotEmpty({ message: '전화번호는 필수 입력 항목입니다.' })
+  @Matches(/^01[016789]\d{7,8}$/, {
+    message: '올바른 전화번호 형식을 입력해주세요. (예: 01012345678)',
+  })
   phone: string;
 
   @ApiPropertyOptional({ description: '마케팅 수신 동의', example: false })

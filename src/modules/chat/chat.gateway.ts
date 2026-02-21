@@ -134,6 +134,10 @@ export class ChatGateway
       throw new WsException('인증되지 않은 사용자입니다.');
     }
 
+    if (payload.content && payload.content.length > 5000) {
+      throw new WsException('메시지는 최대 5000자까지 가능합니다.');
+    }
+
     try {
       const message = await this.chatService.sendMessage(
         payload.roomId,

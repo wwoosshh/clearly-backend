@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ChatService } from '../chat/chat.service';
 import {
@@ -458,6 +458,10 @@ export class CompanyCustomerService {
     userIds: string[],
     content: string,
   ) {
+    if (userIds.length > 50) {
+      throw new BadRequestException('일괄 메시지는 최대 50명까지 발송할 수 있습니다.');
+    }
+
     const results: { userId: string; success: boolean; error?: string }[] = [];
 
     for (const userId of userIds) {
