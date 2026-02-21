@@ -81,6 +81,46 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** Set에 멤버 추가 (SADD) */
+  async sadd(key: string, ...members: string[]): Promise<number> {
+    if (!this.isConnected() || members.length === 0) return 0;
+    try {
+      return await this.client.sadd(key, ...members);
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Set에서 멤버 제거 (SREM) */
+  async srem(key: string, ...members: string[]): Promise<number> {
+    if (!this.isConnected() || members.length === 0) return 0;
+    try {
+      return await this.client.srem(key, ...members);
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Set 멤버 조회 (SMEMBERS) */
+  async smembers(key: string): Promise<string[]> {
+    if (!this.isConnected()) return [];
+    try {
+      return await this.client.smembers(key);
+    } catch {
+      return [];
+    }
+  }
+
+  /** 키에 TTL 설정 (EXPIRE) */
+  async expire(key: string, ttlSeconds: number): Promise<void> {
+    if (!this.isConnected()) return;
+    try {
+      await this.client.expire(key, ttlSeconds);
+    } catch {
+      // 무시
+    }
+  }
+
   async delPattern(pattern: string): Promise<void> {
     if (!this.isConnected()) return;
     try {

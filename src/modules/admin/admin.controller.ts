@@ -23,6 +23,14 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 
+interface UserFilters { search?: string; role?: string; isActive?: string; }
+interface ChatRoomFilters { search?: string; isActive?: string; refundStatus?: string; }
+interface ReportFilters { status?: string; targetType?: string; }
+interface ReviewFilters { isVisible?: string; minRating?: string; maxRating?: string; }
+interface EstimateRequestFilters { status?: string; cleaningType?: string; }
+interface MatchingFilters { status?: string; }
+interface SubscriptionFilters { status?: string; tier?: string; search?: string; }
+
 @ApiTags('관리자')
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -48,7 +56,7 @@ export class AdminController {
   async getUsers(
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
-    @Query() filters: any,
+    @Query() filters: UserFilters,
   ) {
     return this.adminService.getUsers(page, limit, filters);
   }
@@ -135,7 +143,7 @@ export class AdminController {
   async getChatRooms(
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
-    @Query() filters: any,
+    @Query() filters: ChatRoomFilters,
   ) {
     return this.adminService.getChatRooms(page, limit, filters);
   }
@@ -166,7 +174,7 @@ export class AdminController {
   async getReports(
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
-    @Query() filters: any,
+    @Query() filters: ReportFilters,
   ) {
     return this.adminService.getReports(page, limit, filters);
   }
@@ -196,7 +204,7 @@ export class AdminController {
   async getReviews(
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
-    @Query() filters: any,
+    @Query() filters: ReviewFilters,
   ) {
     return this.adminService.getReviews(page, limit, filters);
   }
@@ -216,7 +224,7 @@ export class AdminController {
   async getEstimateRequests(
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
-    @Query() filters: any,
+    @Query() filters: EstimateRequestFilters,
   ) {
     return this.adminService.getEstimateRequests(page, limit, filters);
   }
@@ -229,7 +237,7 @@ export class AdminController {
   async getMatchings(
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
-    @Query() filters: any,
+    @Query() filters: MatchingFilters,
   ) {
     return this.adminService.getMatchings(page, limit, filters);
   }
@@ -242,7 +250,7 @@ export class AdminController {
   async getSubscriptions(
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
-    @Query() filters: any,
+    @Query() filters: SubscriptionFilters,
   ) {
     return this.adminService.getSubscriptions(page, limit, filters);
   }
@@ -323,7 +331,7 @@ export class AdminController {
   @Patch('settings')
   @ApiOperation({ summary: '시스템 설정 수정' })
   @ApiResponse({ status: 200, description: '시스템 설정 수정 성공' })
-  async updateSettings(@Body() settingsDto: any) {
+  async updateSettings(@Body() settingsDto: Record<string, unknown>) {
     return this.adminService.updateSettings(settingsDto);
   }
 }

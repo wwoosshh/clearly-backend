@@ -143,6 +143,25 @@ export class AuthController {
     return this.authService.resetPassword(resetPasswordDto);
   }
 
+  @Get('verify-email')
+  @ApiOperation({ summary: '이메일 인증' })
+  @ApiResponse({ status: 200, description: '이메일 인증 성공' })
+  @ApiResponse({ status: 400, description: '유효하지 않거나 만료된 토큰' })
+  async verifyEmail(@Query('token') token: string) {
+    return this.authService.verifyEmail(token);
+  }
+
+  @Post('resend-verification')
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '인증 이메일 재발송' })
+  @ApiResponse({ status: 200, description: '이메일 재발송 완료' })
+  async resendVerification(@CurrentUser('id') userId: string) {
+    return this.authService.resendVerificationEmail(userId);
+  }
+
   @Get('oauth/:provider')
   @ApiOperation({ summary: 'OAuth 소셜 로그인 시작 (리다이렉트)' })
   @ApiResponse({ status: 302, description: 'OAuth 제공자 로그인 페이지로 리다이렉트' })
@@ -191,11 +210,12 @@ export class AuthController {
         params.set('isNewUser', 'true');
       }
       return res.redirect(`${frontendUrl}/auth/callback?${params.toString()}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // 사용자 친화적 메시지만 전달 (내부 에러 메시지 노출 방지)
       let userMessage = '소셜 로그인에 실패했습니다.';
-      if (err?.status === 409) {
-        userMessage = err.message || '이미 가입된 계정이 있습니다.';
+      const httpErr = err as { status?: number; message?: string };
+      if (httpErr?.status === 409) {
+        userMessage = httpErr.message || '이미 가입된 계정이 있습니다.';
       }
       return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(userMessage)}`);
     }

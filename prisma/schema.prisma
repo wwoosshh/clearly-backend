@@ -153,6 +153,11 @@ enum DevicePlatform {
   WEB
 }
 
+enum CancelledBy {
+  USER
+  COMPANY
+}
+
 enum PipelineStage {
   LEAD
   CONSULTING
@@ -182,6 +187,9 @@ model User {
   marketingConsentAt   DateTime?     @map("marketing_consent_at")
   passwordResetToken   String?       @map("password_reset_token")
   passwordResetExpiry  DateTime?     @map("password_reset_expiry")
+  emailVerified        Boolean       @default(false) @map("email_verified")
+  emailVerifyToken     String?       @map("email_verify_token")
+  emailVerifyExpiry    DateTime?     @map("email_verify_expiry")
   createdAt            DateTime      @default(now()) @map("created_at")
   updatedAt            DateTime      @updatedAt @map("updated_at")
 
@@ -236,7 +244,7 @@ model Company {
   specialties        Json?
   verificationStatus VerificationStatus @default(PENDING) @map("verification_status")
   rejectionReason    String?            @map("rejection_reason") @db.Text
-  averageRating      Decimal            @default(0.0) @map("average_rating") @db.Decimal(2, 1)
+  averageRating      Decimal            @default(0.0) @map("average_rating") @db.Decimal(3, 2)
   totalReviews       Int                @default(0) @map("total_reviews")
   totalMatchings     Int                @default(0) @map("total_matchings")
   responseTime       Int?               @map("response_time")
@@ -297,7 +305,7 @@ model Matching {
   message        String?        @db.Text
   estimatedPrice Int?           @map("estimated_price")
   rejectionReason    String?       @map("rejection_reason") @db.Text
-  cancelledBy        String?       @map("cancelled_by") @db.VarChar(20)
+  cancelledBy        CancelledBy?  @map("cancelled_by")
   completionImages   Json?         @map("completion_images")
   completionReportedAt DateTime?   @map("completion_reported_at")
   estimateId         String?       @unique @map("estimate_id")
@@ -305,9 +313,9 @@ model Matching {
   createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt          DateTime      @updatedAt @map("updated_at")
 
-  user     User      @relation(fields: [userId], references: [id])
-  company  Company?  @relation(fields: [companyId], references: [id])
-  estimate Estimate? @relation(fields: [estimateId], references: [id])
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company  Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  estimate Estimate? @relation(fields: [estimateId], references: [id], onDelete: SetNull)
   chatRoom ChatRoom?
   review   Review?
 
@@ -332,10 +340,10 @@ model ChatRoom {
   estimateId      String?      @unique @map("estimate_id")
   createdAt       DateTime     @default(now()) @map("created_at")
 
-  matching  Matching?     @relation(fields: [matchingId], references: [id])
-  user      User          @relation("UserChatRooms", fields: [userId], references: [id])
-  company   Company       @relation(fields: [companyId], references: [id])
-  estimate  Estimate?     @relation(fields: [estimateId], references: [id])
+  matching  Matching?     @relation(fields: [matchingId], references: [id], onDelete: SetNull)
+  user      User          @relation("UserChatRooms", fields: [userId], references: [id], onDelete: Cascade)
+  company   Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  estimate  Estimate?     @relation(fields: [estimateId], references: [id], onDelete: SetNull)
   messages  ChatMessage[]
 
   @@index([userId])
@@ -352,10 +360,11 @@ model ChatMessage {
   messageType MessageType @default(TEXT) @map("message_type")
   fileUrl     String?     @map("file_url") @db.VarChar(500)
   isRead      Boolean     @default(false) @map("is_read")
+  readAt      DateTime?   @map("read_at")
   createdAt   DateTime    @default(now()) @map("created_at")
 
   room   ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  sender User     @relation(fields: [senderId], references: [id])
+  sender User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([roomId, createdAt(sort: Desc)])
   @@index([roomId, isRead, senderId])
@@ -383,9 +392,9 @@ model Review {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  matching Matching @relation(fields: [matchingId], references: [id])
-  user     User     @relation(fields: [userId], references: [id])
-  company  Company  @relation(fields: [companyId], references: [id])
+  matching Matching @relation(fields: [matchingId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId, createdAt(sort: Desc)])
   @@index([companyId, isVisible])
@@ -426,8 +435,8 @@ model CompanySubscription {
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
 
-  company  Company          @relation(fields: [companyId], references: [id])
-  plan     SubscriptionPlan @relation(fields: [planId], references: [id])
+  company  Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  plan     SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
   payments Payment[]
 
   @@index([companyId])
@@ -448,7 +457,7 @@ model Payment {
   paidAt         DateTime?     @map("paid_at")
   createdAt      DateTime      @default(now()) @map("created_at")
 
-  subscription CompanySubscription @relation(fields: [subscriptionId], references: [id])
+  subscription CompanySubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
   @@index([subscriptionId])
   @@map("payments")
@@ -462,6 +471,7 @@ model Notification {
   content   String?          @db.Text
   data      Json?
   isRead    Boolean          @default(false) @map("is_read")
+  readAt    DateTime?        @map("read_at")
   createdAt DateTime         @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -483,7 +493,7 @@ model Report {
   createdAt   DateTime         @default(now()) @map("created_at")
   resolvedAt  DateTime?        @map("resolved_at")
 
-  reporter User @relation("ReporterReports", fields: [reporterId], references: [id])
+  reporter User @relation("ReporterReports", fields: [reporterId], references: [id], onDelete: Cascade)
 
   @@index([status])
   @@index([targetType, targetId])
@@ -514,7 +524,7 @@ model EstimateRequest {
   createdAt     DateTime              @default(now()) @map("created_at")
   updatedAt     DateTime              @updatedAt @map("updated_at")
 
-  user      User       @relation(fields: [userId], references: [id])
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   estimates Estimate[]
 
   @@index([status, createdAt(sort: Desc)])
@@ -535,8 +545,8 @@ model Estimate {
   status            EstimateStatus @default(SUBMITTED)
   createdAt         DateTime       @default(now()) @map("created_at")
 
-  estimateRequest EstimateRequest @relation(fields: [estimateRequestId], references: [id])
-  company         Company         @relation(fields: [companyId], references: [id])
+  estimateRequest EstimateRequest @relation(fields: [estimateRequestId], references: [id], onDelete: Cascade)
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   matching        Matching?
   chatRoom        ChatRoom?
 

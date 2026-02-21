@@ -491,11 +491,11 @@ export class CompanyCustomerService {
           'TEXT',
         );
         results.push({ userId, success: true });
-      } catch (err: any) {
+      } catch (err: unknown) {
         results.push({
           userId,
           success: false,
-          error: err.message || 'Unknown error',
+          error: err instanceof Error ? err.message : String(err),
         });
       }
     }

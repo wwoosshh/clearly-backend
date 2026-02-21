@@ -21,6 +21,32 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: string;
+}
+
+interface CreateMatchingRequestDto {
+  companyId?: string;
+  cleaningType: string;
+  address: string;
+  detailAddress?: string;
+  areaSize?: number;
+  desiredDate?: string;
+  desiredTime?: string;
+  message?: string;
+  estimatedPrice?: number;
+}
+
+interface MatchingQueryFilters {
+  userId?: string;
+  companyId?: string;
+  status?: string;
+  page?: number;
+  limit?: number;
+}
+
 @ApiTags('매칭')
 @Controller('matchings')
 @UseGuards(JwtAuthGuard)
@@ -36,7 +62,7 @@ export class MatchingController {
   @ApiResponse({ status: 201, description: '매칭 요청 생성 성공' })
   async createRequest(
     @CurrentUser('id') userId: string,
-    @Body() createRequestDto: any,
+    @Body() createRequestDto: CreateMatchingRequestDto,
   ) {
     return this.matchingService.createRequest(userId, createRequestDto);
   }
@@ -46,8 +72,8 @@ export class MatchingController {
   @ApiResponse({ status: 200, description: '매칭 요청 목록 조회 성공' })
   async findRequests(
     @CurrentUser('id') userId: string,
-    @CurrentUser() user: any,
-    @Query() filters: any,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() filters: MatchingQueryFilters,
   ) {
     if (user.role === 'USER') {
       filters.userId = userId;
@@ -113,7 +139,7 @@ export class MatchingController {
   @ApiOperation({ summary: '매칭 취소' })
   @ApiResponse({ status: 200, description: '취소 성공' })
   async cancelMatching(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('id') matchingId: string,
     @Body() body: { reason: string },
   ) {

@@ -9,6 +9,8 @@ import { EstimateService } from './estimate.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { ChatService } from '../chat/chat.service';
+import { SystemSettingService } from '../system-setting/system-setting.service';
+import { RedisService } from '../../common/cache/redis.service';
 
 describe('EstimateService', () => {
   let service: EstimateService;
@@ -112,6 +114,20 @@ describe('EstimateService', () => {
           provide: EventEmitter2,
           useValue: {
             emit: jest.fn(),
+          },
+        },
+        {
+          provide: SystemSettingService,
+          useValue: {
+            get: jest.fn().mockImplementation((_key: string, defaultValue: unknown) => defaultValue),
+          },
+        },
+        {
+          provide: RedisService,
+          useValue: {
+            get: jest.fn().mockResolvedValue(null),
+            set: jest.fn().mockResolvedValue(undefined),
+            del: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],
@@ -326,6 +342,9 @@ describe('EstimateService', () => {
         chatRoom: {
           create: jest.fn().mockResolvedValue({ id: 'chatroom-uuid-1' }),
         },
+        company: {
+          update: jest.fn().mockResolvedValue({}),
+        },
       };
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
@@ -370,6 +389,9 @@ describe('EstimateService', () => {
         },
         chatRoom: {
           create: jest.fn().mockResolvedValue({ id: 'chatroom-uuid-1' }),
+        },
+        company: {
+          update: jest.fn().mockResolvedValue({}),
         },
       };
 

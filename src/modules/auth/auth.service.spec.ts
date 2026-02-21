@@ -12,6 +12,7 @@ import { AuthService } from './auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { MailService } from '../mail/mail.service';
+import { RedisService } from '../../common/cache/redis.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -66,6 +67,7 @@ describe('AuthService', () => {
           provide: ConfigService,
           useValue: {
             get: jest.fn().mockReturnValue('test-secret'),
+            getOrThrow: jest.fn().mockReturnValue('test-secret'),
           },
         },
         {
@@ -85,6 +87,16 @@ describe('AuthService', () => {
           provide: MailService,
           useValue: {
             sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
+            sendVerificationEmail: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: RedisService,
+          useValue: {
+            get: jest.fn().mockResolvedValue(null),
+            set: jest.fn().mockResolvedValue(undefined),
+            del: jest.fn().mockResolvedValue(undefined),
+            delPattern: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],
@@ -201,8 +213,8 @@ describe('AuthService', () => {
         id: 'token-id',
         token: 'valid-refresh-token',
         expiresAt: new Date(Date.now() + 86400000),
+        user: { ...mockUser, company: null },
       });
-      prisma.user.findUnique.mockResolvedValue(mockUser);
       prisma.refreshToken.delete.mockResolvedValue({});
       prisma.refreshToken.create.mockResolvedValue({});
 

@@ -15,6 +15,9 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { ChatService } from './chat.service';
 import { ConnectionManager } from '../../common/websocket/connection-manager';
+import type { MessageType } from '@prisma/client';
+
+const CONTEXT = 'chat';
 
 @WebSocketGateway({
   cors: {
@@ -41,20 +44,20 @@ export class ChatGateway
   server: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
-  private readonly connectionManager = new ConnectionManager('chat');
   private cleanupInterval: ReturnType<typeof setInterval>;
 
   constructor(
     private readonly chatService: ChatService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly connectionManager: ConnectionManager,
   ) {}
 
   afterInit() {
     this.logger.log('채팅 웹소켓 게이트웨이 초기화 완료');
 
     this.cleanupInterval = setInterval(() => {
-      this.connectionManager.cleanupStaleConnections(this.server);
+      this.connectionManager.cleanupStaleConnections(CONTEXT, this.server);
     }, 60000);
   }
 
@@ -80,9 +83,9 @@ export class ChatGateway
         secret: this.configService.getOrThrow('JWT_ACCESS_SECRET'),
       });
 
-      (client as any).userId = payload.sub;
+      (client as Socket & { userId: string }).userId = payload.sub;
 
-      this.connectionManager.addConnection(payload.sub, client.id, this.server);
+      await this.connectionManager.addConnection(CONTEXT, payload.sub, client.id, this.server);
 
       this.logger.log(
         `클라이언트 연결: ${client.id}, userId: ${payload.sub}, 총 연결: ${this.connectionManager.getTotalConnections()}`,
@@ -93,8 +96,8 @@ export class ChatGateway
     }
   }
 
-  handleDisconnect(client: Socket) {
-    this.connectionManager.removeConnection(client.id);
+  async handleDisconnect(client: Socket) {
+    await this.connectionManager.removeConnection(CONTEXT, client.id);
     this.logger.log(`클라이언트 연결 해제: ${client.id}`);
   }
 
@@ -129,7 +132,7 @@ export class ChatGateway
       fileUrl?: string;
     },
   ) {
-    const userId = (client as any).userId;
+    const userId = (client as Socket & { userId?: string }).userId;
     if (!userId) {
       throw new WsException('인증되지 않은 사용자입니다.');
     }
@@ -143,7 +146,7 @@ export class ChatGateway
         payload.roomId,
         userId,
         payload.content,
-        (payload.messageType as any) || 'TEXT',
+        (payload.messageType as MessageType) || 'TEXT',
         payload.fileUrl,
       );
 
@@ -163,7 +166,7 @@ export class ChatGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() roomId: string,
   ) {
-    const userId = (client as any).userId;
+    const userId = (client as Socket & { userId?: string }).userId;
     if (!userId) return;
 
     const result = await this.chatService.markAsRead(roomId, userId);

@@ -22,6 +22,12 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: string;
+}
+
 @ApiTags('구독')
 @Controller('subscriptions')
 export class SubscriptionController {
@@ -43,7 +49,7 @@ export class SubscriptionController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '내 구독 상태 조회' })
   @ApiResponse({ status: 200, description: '구독 상태 조회 성공' })
-  async getMySubscription(@CurrentUser() user: any) {
+  async getMySubscription(@CurrentUser() user: AuthenticatedUser) {
     const company = await this.getCompanyByUserId(user.id);
     return this.subscriptionService.getHighestActiveSubscription(company.id);
   }
@@ -55,7 +61,7 @@ export class SubscriptionController {
   @ApiOperation({ summary: '구독 이력 조회' })
   @ApiResponse({ status: 200, description: '구독 이력 조회 성공' })
   async getMyHistory(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
@@ -73,7 +79,7 @@ export class SubscriptionController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '구독 스택 조회 (ACTIVE/PAUSED/QUEUED)' })
   @ApiResponse({ status: 200, description: '구독 스택 조회 성공' })
-  async getMyStack(@CurrentUser() user: any) {
+  async getMyStack(@CurrentUser() user: AuthenticatedUser) {
     const company = await this.getCompanyByUserId(user.id);
     return this.subscriptionService.getSubscriptionStack(company.id);
   }
@@ -84,7 +90,7 @@ export class SubscriptionController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '오늘의 견적 한도 현황' })
   @ApiResponse({ status: 200, description: '견적 한도 조회 성공' })
-  async getEstimateLimit(@CurrentUser() user: any) {
+  async getEstimateLimit(@CurrentUser() user: AuthenticatedUser) {
     const company = await this.getCompanyByUserId(user.id);
     return this.subscriptionService.canSubmitEstimate(company.id);
   }
@@ -96,7 +102,7 @@ export class SubscriptionController {
   @ApiOperation({ summary: '구독 신청' })
   @ApiResponse({ status: 201, description: '구독 신청 성공' })
   async subscribe(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateSubscriptionDto,
   ) {
     const company = await this.getCompanyByUserId(user.id);
@@ -109,7 +115,7 @@ export class SubscriptionController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '구독 해지' })
   @ApiResponse({ status: 200, description: '구독 해지 성공' })
-  async cancel(@CurrentUser() user: any) {
+  async cancel(@CurrentUser() user: AuthenticatedUser) {
     const company = await this.getCompanyByUserId(user.id);
     return this.subscriptionService.cancelSubscription(company.id);
   }

@@ -4,11 +4,59 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { Prisma, VerificationStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
 import { RedisService } from '../../common/cache/redis.service';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { SearchCompanyDto, SortBy } from './dto/search-company.dto';
+
+interface CompanyWithScore {
+  id: string;
+  businessName: string;
+  averageRating: string | null;
+  totalReviews: number;
+  totalMatchings: number;
+  minPrice: number | null;
+  maxPrice: number | null;
+  score: number;
+  [key: string]: unknown;
+}
+
+interface RawCompanyRow {
+  id: string;
+  business_name: string;
+  business_number: string;
+  representative: string;
+  address: string | null;
+  detail_address: string | null;
+  description: string | null;
+  profile_images: unknown;
+  specialties: unknown;
+  service_areas: unknown;
+  min_price: number | null;
+  max_price: number | null;
+  average_rating: string | null;
+  total_reviews: number;
+  total_matchings: number;
+  response_time: number | null;
+  identity_verified: boolean;
+  experience_years: number | null;
+  contact_hours: string | null;
+  employee_count: number | null;
+  approved_at: Date | null;
+  certificates: unknown;
+  company_url: string | null;
+  service_detail: string | null;
+  portfolio: unknown;
+  contact_email: string | null;
+  videos: unknown;
+  subscription_tier: string | null;
+  priority_weight: string | null;
+  user_id: string;
+  user_name: string;
+  user_profile_image: string | null;
+}
 
 @Injectable()
 export class CompanyService {
@@ -20,14 +68,14 @@ export class CompanyService {
     private readonly redis: RedisService,
   ) {}
 
-  async create(data: any) {
+  async create(data: Prisma.CompanyCreateInput) {
     return this.prisma.company.create({ data });
   }
 
   async findById(id: string) {
     const cacheKey = `company:detail:${id}`;
-    const cached = await this.redis.get<any>(cacheKey);
-    if (cached) return cached;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return cached as Record<string, unknown>;
 
     const company = await this.prisma.company.findUnique({
       where: { id },
@@ -67,7 +115,7 @@ export class CompanyService {
   async getMyCompany(userId: string) {
     // Redis 캐시 확인 (TTL 5분)
     const cacheKey = `company:profile:${userId}`;
-    const cached = await this.redis.get<any>(cacheKey);
+    const cached = await this.redis.get<{ id: string; [key: string]: unknown }>(cacheKey);
     if (cached) return cached;
 
     const company = await this.prisma.company.findUnique({
@@ -148,7 +196,7 @@ export class CompanyService {
     }
 
     // DTO class instance → plain object 변환 (Json 필드가 Prisma에 올바르게 전달되도록)
-    const updateData: Record<string, any> = {};
+    const updateData: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
       if (value !== undefined) {
         updateData[key] = value;
@@ -156,10 +204,11 @@ export class CompanyService {
     }
 
     // 주소가 변경된 경우 위도/경도 재계산
-    if (updateData.address && updateData.address !== company.address) {
+    const newAddress = updateData.address as string | undefined;
+    if (newAddress && newAddress !== company.address) {
       try {
         const coords = await this.geocodingService.geocodeAddress(
-          updateData.address,
+          newAddress,
         );
         if (coords) {
           updateData.latitude = coords.latitude;
@@ -169,7 +218,7 @@ export class CompanyService {
           );
         } else {
           this.logger.warn(
-            `업체 ${id} 주소 변경 → 좌표 변환 실패: "${updateData.address}"`,
+            `업체 ${id} 주소 변경 → 좌표 변환 실패: "${newAddress}"`,
           );
         }
       } catch (err) {
@@ -196,8 +245,8 @@ export class CompanyService {
       throw new NotFoundException('업체를 찾을 수 없습니다.');
     }
 
-    const updateData: Record<string, any> = {
-      verificationStatus: status as any,
+    const updateData: Prisma.CompanyUpdateInput = {
+      verificationStatus: status as VerificationStatus,
     };
 
     if (status === 'APPROVED') {
@@ -220,174 +269,207 @@ export class CompanyService {
       limit = 10,
     } = dto;
 
-    // --- DB 레벨 필터링 (키워드) ---
-    const whereConditions: any = {
-      verificationStatus: 'APPROVED',
-      isActive: true,
-    };
+    // --- DB 레벨 필터링 (jsonb 포함) ---
+    const conditions: string[] = [
+      `c.verification_status = 'APPROVED'`,
+      `c.is_active = true`,
+    ];
+    const params: unknown[] = [];
+    let paramIdx = 1;
 
-    if (keyword) {
-      whereConditions.OR = [
-        { businessName: { contains: keyword, mode: 'insensitive' } },
-        { description: { contains: keyword, mode: 'insensitive' } },
-      ];
+    if (specialty) {
+      conditions.push(
+        `EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(c.specialties, '[]'::jsonb)) AS s WHERE s ILIKE $${paramIdx})`,
+      );
+      params.push(`%${specialty}%`);
+      paramIdx++;
     }
 
-    const companies = await this.prisma.company.findMany({
-      where: whereConditions,
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            phone: true,
-            profileImage: true,
-          },
-        },
-        subscriptions: {
-          where: { status: 'ACTIVE' },
-          include: { plan: true },
-          take: 1,
-          orderBy: { createdAt: 'desc' },
-        },
-      },
-    });
+    if (region) {
+      conditions.push(
+        `(EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(c.service_areas, '[]'::jsonb)) AS a WHERE a ILIKE $${paramIdx}) OR c.address ILIKE $${paramIdx})`,
+      );
+      params.push(`%${region}%`);
+      paramIdx++;
+    }
 
-    // --- 메모리 필터링 (JSON 필드: DB에서 직접 필터 불가) ---
-    const companiesWithScore = companies
-      .map((company) => {
-        // 전문분야 필터 (JSON 배열이므로 메모리에서 처리)
-        if (specialty) {
-          const specs = Array.isArray(company.specialties)
-            ? (company.specialties as string[])
-            : [];
-          if (!specs.some((s) => s.includes(specialty))) return null;
-        }
+    if (keyword) {
+      conditions.push(
+        `(c.business_name ILIKE $${paramIdx} OR c.description ILIKE $${paramIdx} OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(c.specialties, '[]'::jsonb)) AS s WHERE s ILIKE $${paramIdx}))`,
+      );
+      params.push(`%${keyword}%`);
+      paramIdx++;
+    }
 
-        // 지역 필터 (JSON 배열이므로 메모리에서 처리)
-        if (region) {
-          const areas = Array.isArray(company.serviceAreas)
-            ? (company.serviceAreas as string[])
-            : [];
-          const areaMatch = areas.some((a) => a.includes(region));
-          const addrMatch = company.address?.includes(region);
-          if (!areaMatch && !addrMatch) return null;
-        }
+    const whereClause = conditions.join(' AND ');
 
-        // 키워드가 specialties에 포함되는 경우도 매칭 (DB OR에서 누락될 수 있음)
-        if (keyword) {
-          const kw = keyword.toLowerCase();
-          const nameMatch = company.businessName?.toLowerCase().includes(kw);
-          const descMatch = company.description?.toLowerCase().includes(kw);
-          const specMatch = Array.isArray(company.specialties)
-            ? (company.specialties as string[]).some((s) =>
-                s.toLowerCase().includes(kw),
-              )
-            : false;
-          if (!nameMatch && !descMatch && !specMatch) return null;
-        }
-
-        // 구독 등급 가중치 (구독 없으면 기본 1.0 적용)
-        const subscription = company.subscriptions[0];
-        const priorityWeight = subscription?.plan?.priorityWeight ?? 1.0;
-
-        // 점수 계산
-        const ratingScore = this.calcRatingScore(
-          company.averageRating != null ? Number(company.averageRating) : null,
-        );
-        const responseScore = this.calcResponseTimeScore(company.responseTime);
-        const matchingScore = this.calcMatchingScore(company.totalMatchings);
-        const subscriptionScore = this.calcSubscriptionScore(
-          typeof priorityWeight === 'object' && priorityWeight !== null
-            ? (priorityWeight as any).toNumber()
-            : (priorityWeight as number),
-        );
-        const profileScore = this.calcProfileCompleteness(company);
-
-        // 신규 업체 부스트 (가입 30일 이내 +15점, 이후 60일까지 점진 감소)
-        const boostScore = this.calcNewCompanyBoost(company.approvedAt);
-
-        const totalScore =
-          ratingScore * 0.35 +
-          profileScore * 0.25 +
-          responseScore * 0.15 +
-          matchingScore * 0.15 +
-          subscriptionScore * 0.1 +
-          boostScore;
-
-        return {
-          id: company.id,
-          businessName: company.businessName,
-          businessNumber: company.businessNumber,
-          representative: company.representative,
-          address: company.address,
-          detailAddress: company.detailAddress,
-          description: company.description,
-          profileImages: company.profileImages,
-          specialties: company.specialties,
-          serviceAreas: company.serviceAreas,
-          minPrice: company.minPrice,
-          maxPrice: company.maxPrice,
-          averageRating: company.averageRating,
-          totalReviews: company.totalReviews,
-          totalMatchings: company.totalMatchings,
-          responseTime: company.responseTime,
-          identityVerified: company.identityVerified,
-          experienceYears: company.experienceYears,
-          contactHours: company.contactHours,
-          employeeCount: company.employeeCount,
-          subscriptionTier: subscription?.plan?.tier ?? null,
-          isNew: boostScore > 0,
-          distance: null,
-          score: Math.round(totalScore * 10) / 10,
-          baseScore: Math.round(totalScore * 10) / 10,
-          user: company.user,
-        };
-      })
-      .filter(Boolean) as any[];
+    // COUNT 쿼리
+    const countQuery = `SELECT COUNT(*)::int AS total FROM companies c WHERE ${whereClause}`;
+    const countResult = await this.prisma.$queryRawUnsafe<[{ total: number }]>(
+      countQuery,
+      ...params,
+    );
+    const total = countResult[0]?.total ?? 0;
 
     // 정렬
-    this.sortCompanies(companiesWithScore, sortBy);
+    let orderClause: string;
+    switch (sortBy) {
+      case SortBy.RATING:
+        orderClause = 'c.average_rating DESC NULLS LAST';
+        break;
+      case SortBy.REVIEWS:
+        orderClause = 'c.total_reviews DESC';
+        break;
+      case SortBy.MATCHINGS:
+        orderClause = 'c.total_matchings DESC';
+        break;
+      case SortBy.PRICE_LOW:
+        orderClause = 'c.min_price ASC NULLS LAST';
+        break;
+      case SortBy.PRICE_HIGH:
+        orderClause = 'c.max_price DESC NULLS LAST';
+        break;
+      case SortBy.SCORE:
+      default:
+        orderClause =
+          'c.search_score DESC NULLS LAST, c.average_rating DESC NULLS LAST';
+        break;
+    }
 
-    // 업체 고유 품질 점수를 DB에 저장 (비동기, 페이지 내 업체만)
-    const total = companiesWithScore.length;
-    const totalPages = Math.ceil(total / limit);
-    const startIndex = (page - 1) * limit;
-    const paginatedData = companiesWithScore.slice(
-      startIndex,
-      startIndex + limit,
+    const offset = (page - 1) * limit;
+    const limitParamIdx = paramIdx;
+    const offsetParamIdx = paramIdx + 1;
+    params.push(limit, offset);
+
+    // 데이터 쿼리 (구독 정보 포함)
+    const dataQuery = `
+      SELECT
+        c.id, c.business_name, c.business_number, c.representative,
+        c.address, c.detail_address, c.description, c.profile_images,
+        c.specialties, c.service_areas, c.min_price, c.max_price,
+        c.average_rating, c.total_reviews, c.total_matchings,
+        c.response_time, c.identity_verified, c.experience_years,
+        c.contact_hours, c.employee_count, c.approved_at,
+        c.certificates, c.company_url, c.service_detail,
+        c.portfolio, c.contact_email, c.videos,
+        sp.tier AS subscription_tier,
+        sp.priority_weight AS priority_weight,
+        u.id AS user_id, u.name AS user_name, u.profile_image AS user_profile_image
+      FROM companies c
+      LEFT JOIN LATERAL (
+        SELECT cs.plan_id
+        FROM company_subscriptions cs
+        WHERE cs.company_id = c.id AND cs.status = 'ACTIVE'
+        ORDER BY cs.created_at DESC
+        LIMIT 1
+      ) latest_sub ON true
+      LEFT JOIN subscription_plans sp ON sp.id = latest_sub.plan_id
+      LEFT JOIN users u ON u.id = c.user_id
+      WHERE ${whereClause}
+      ORDER BY ${orderClause}
+      LIMIT $${limitParamIdx} OFFSET $${offsetParamIdx}
+    `;
+
+    const rows = await this.prisma.$queryRawUnsafe<RawCompanyRow[]>(
+      dataQuery,
+      ...params,
     );
 
-    // 검색 점수 배치 업데이트 (단일 트랜잭션)
-    const companyIds = paginatedData.map((c: any) => c.id);
-    if (companyIds.length > 0) {
-      this.prisma.$transaction(
-        paginatedData.map((c: any) =>
-          this.prisma.company.update({
-            where: { id: c.id },
-            data: {
-              searchScore: c.baseScore,
-              searchScoreAt: new Date(),
-            },
-          }),
-        ),
-      ).catch(() => {});
+    // 페이지 결과에 대해서만 점수 계산
+    const data = rows.map((row) => {
+      const priorityWeight = row.priority_weight
+        ? Number(row.priority_weight)
+        : 1.0;
+
+      const ratingScore = this.calcRatingScore(
+        row.average_rating != null ? Number(row.average_rating) : null,
+      );
+      const responseScore = this.calcResponseTimeScore(row.response_time);
+      const matchingScore = this.calcMatchingScore(row.total_matchings);
+      const subscriptionScore = this.calcSubscriptionScore(priorityWeight);
+      const profileScore = this.calcProfileCompletenessRaw(row);
+      const boostScore = this.calcNewCompanyBoost(row.approved_at);
+
+      const totalScore =
+        ratingScore * 0.35 +
+        profileScore * 0.25 +
+        responseScore * 0.15 +
+        matchingScore * 0.15 +
+        subscriptionScore * 0.1 +
+        boostScore;
+
+      const score = Math.round(totalScore * 10) / 10;
+
+      return {
+        id: row.id,
+        businessName: row.business_name,
+        businessNumber: row.business_number,
+        representative: row.representative,
+        address: row.address,
+        detailAddress: row.detail_address,
+        description: row.description,
+        profileImages: row.profile_images,
+        specialties: row.specialties,
+        serviceAreas: row.service_areas,
+        minPrice: row.min_price,
+        maxPrice: row.max_price,
+        averageRating: row.average_rating,
+        totalReviews: row.total_reviews,
+        totalMatchings: row.total_matchings,
+        responseTime: row.response_time,
+        identityVerified: row.identity_verified,
+        experienceYears: row.experience_years,
+        contactHours: row.contact_hours,
+        employeeCount: row.employee_count,
+        subscriptionTier: row.subscription_tier ?? null,
+        isNew: boostScore > 0,
+        distance: null,
+        score,
+        baseScore: score,
+        user: {
+          id: row.user_id,
+          name: row.user_name,
+          profileImage: row.user_profile_image,
+        },
+      };
+    });
+
+    // SCORE 정렬일 경우 계산된 점수로 재정렬
+    if (sortBy === SortBy.SCORE) {
+      data.sort((a, b) => b.score - a.score);
+    }
+
+    // 검색 점수 배치 업데이트 (비동기)
+    if (data.length > 0) {
+      this.prisma
+        .$transaction(
+          data.map((c) =>
+            this.prisma.company.update({
+              where: { id: c.id },
+              data: {
+                searchScore: c.baseScore,
+                searchScoreAt: new Date(),
+              },
+            }),
+          ),
+        )
+        .catch(() => {});
     }
 
     return {
-      data: paginatedData,
+      data,
       meta: {
         total,
         page,
         limit,
-        totalPages,
+        totalPages: Math.ceil(total / limit),
       },
       searchLocation: null,
     };
   }
 
   /** 정렬 */
-  private sortCompanies(companies: any[], sortBy: SortBy) {
+  private sortCompanies(companies: CompanyWithScore[], sortBy: SortBy) {
     switch (sortBy) {
       case SortBy.RATING:
         companies.sort(
@@ -461,48 +543,54 @@ export class CompanyService {
     return 0; // 60일 이후: 부스트 없음
   }
 
-  /** 프로필 완성도 점수: 정보가 많이 채워진 업체 우대 */
-  private calcProfileCompleteness(company: any): number {
+  /** 프로필 완성도 점수 (raw query 결과용) */
+  private calcProfileCompletenessRaw(row: RawCompanyRow): number {
     let filled = 0;
     const total = 16;
+    const isNonEmptyArray = (v: unknown) => Array.isArray(v) && v.length > 0;
+
+    if (row.description) filled++;
+    if (isNonEmptyArray(row.specialties)) filled++;
+    if (isNonEmptyArray(row.service_areas)) filled++;
+    if (row.min_price != null || row.max_price != null) filled++;
+    if (isNonEmptyArray(row.profile_images)) filled++;
+    if (isNonEmptyArray(row.certificates)) filled++;
+    if (row.address) filled++;
+    if (row.contact_hours) filled++;
+    if (row.employee_count != null) filled++;
+    if (row.company_url) filled++;
+    if (row.experience_years != null) filled++;
+    if (row.service_detail) filled++;
+    if (isNonEmptyArray(row.portfolio)) filled++;
+    if (row.contact_email) filled++;
+    if (row.identity_verified) filled++;
+    if (isNonEmptyArray(row.videos)) filled++;
+
+    return (filled / total) * 100;
+  }
+
+  /** 프로필 완성도 점수: 정보가 많이 채워진 업체 우대 */
+  private calcProfileCompleteness(company: Record<string, unknown>): number {
+    let filled = 0;
+    const total = 16;
+    const isNonEmptyArray = (v: unknown) => Array.isArray(v) && v.length > 0;
 
     if (company.description) filled++;
-    if (
-      Array.isArray(company.specialties) &&
-      (company.specialties as any[]).length > 0
-    )
-      filled++;
-    if (
-      Array.isArray(company.serviceAreas) &&
-      (company.serviceAreas as any[]).length > 0
-    )
-      filled++;
+    if (isNonEmptyArray(company.specialties)) filled++;
+    if (isNonEmptyArray(company.serviceAreas)) filled++;
     if (company.minPrice != null || company.maxPrice != null) filled++;
-    if (
-      Array.isArray(company.profileImages) &&
-      (company.profileImages as any[]).length > 0
-    )
-      filled++;
-    if (
-      Array.isArray(company.certificates) &&
-      (company.certificates as any[]).length > 0
-    )
-      filled++;
+    if (isNonEmptyArray(company.profileImages)) filled++;
+    if (isNonEmptyArray(company.certificates)) filled++;
     if (company.address) filled++;
     if (company.contactHours) filled++;
     if (company.employeeCount != null) filled++;
     if (company.companyUrl) filled++;
     if (company.experienceYears != null) filled++;
     if (company.serviceDetail) filled++;
-    if (
-      Array.isArray(company.portfolio) &&
-      (company.portfolio as any[]).length > 0
-    )
-      filled++;
+    if (isNonEmptyArray(company.portfolio)) filled++;
     if (company.contactEmail) filled++;
     if (company.identityVerified) filled++;
-    if (Array.isArray(company.videos) && (company.videos as any[]).length > 0)
-      filled++;
+    if (isNonEmptyArray(company.videos)) filled++;
 
     return (filled / total) * 100;
   }

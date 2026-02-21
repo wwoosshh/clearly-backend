@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { Prisma, InquiryStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateInquiryDto } from './dto/create-inquiry.dto';
 import { AnswerInquiryDto } from './dto/answer-inquiry.dto';
@@ -80,9 +81,9 @@ export class InquiryService {
   async getAdminInquiries(page: number, limit: number, status?: string) {
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.InquiryWhereInput = {};
     if (status) {
-      where.status = status;
+      where.status = status as InquiryStatus;
     }
 
     const [inquiries, total] = await Promise.all([

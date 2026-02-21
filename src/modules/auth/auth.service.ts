@@ -65,6 +65,28 @@ export class AuthService {
       },
     });
 
+    // 이메일 인증 토큰 생성 + 발송 (비동기, 실패해도 가입은 진행)
+    const verifyToken = crypto.randomBytes(32).toString('hex');
+    const hashedVerifyToken = crypto
+      .createHash('sha256')
+      .update(verifyToken)
+      .digest('hex');
+    const verifyExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24시간
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerifyToken: hashedVerifyToken,
+        emailVerifyExpiry: verifyExpiry,
+      },
+    });
+
+    this.mailService
+      .sendVerificationEmail(email, verifyToken)
+      .catch((err) =>
+        this.logger.error(`인증 이메일 발송 실패: ${email}`, err),
+      );
+
     const tokens = await this.generateTokens(user.id, user.email, user.role, {
       name: user.name,
     });
@@ -322,6 +344,7 @@ export class AuthService {
         profileImage: true,
         role: true,
         agreeMarketing: true,
+        emailVerified: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -407,6 +430,71 @@ export class AuthService {
     ]);
 
     return { message: '비밀번호가 성공적으로 변경되었습니다.' };
+  }
+
+  async verifyEmail(token: string) {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        emailVerifyToken: hashedToken,
+        emailVerifyExpiry: { gt: new Date() },
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException(
+        '유효하지 않거나 만료된 인증 링크입니다. 인증 이메일을 다시 요청해주세요.',
+      );
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerified: true,
+        emailVerifyToken: null,
+        emailVerifyExpiry: null,
+      },
+    });
+
+    // 캐시 무효화
+    await this.redis.del(`user:profile:${user.id}`);
+
+    this.logger.log(`이메일 인증 완료: userId=${user.id}, email=${user.email}`);
+    return { message: '이메일 인증이 완료되었습니다.' };
+  }
+
+  async resendVerificationEmail(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new BadRequestException('사용자를 찾을 수 없습니다.');
+    }
+
+    if (user.emailVerified) {
+      return { message: '이미 인증된 이메일입니다.' };
+    }
+
+    const verifyToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(verifyToken)
+      .digest('hex');
+    const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        emailVerifyToken: hashedToken,
+        emailVerifyExpiry: expiry,
+      },
+    });
+
+    await this.mailService.sendVerificationEmail(user.email, verifyToken);
+
+    return { message: '인증 이메일을 재발송했습니다.' };
   }
 
   async kakaoLogin(dto: KakaoLoginDto) {

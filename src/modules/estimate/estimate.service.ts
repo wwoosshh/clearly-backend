@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { ChatService } from '../chat/chat.service';
 import { RedisService } from '../../common/cache/redis.service';
+import { Prisma, CleaningType } from '@prisma/client';
 import { CreateEstimateRequestDto } from './dto/create-estimate-request.dto';
 import { SubmitEstimateDto } from './dto/submit-estimate.dto';
 import {
@@ -90,10 +91,10 @@ export class EstimateService {
     this.logger.log(`견적요청 생성: id=${request.id}, userId=${userId}`);
 
     // 지역 + 전문분야 기반 타겟 업체 필터링 (DB 레벨)
-    const reqLat = dto.latitude ?? (request as any).latitude;
-    const reqLng = dto.longitude ?? (request as any).longitude;
+    const reqLat = dto.latitude ?? request.latitude;
+    const reqLng = dto.longitude ?? request.longitude;
 
-    const baseWhere: any = {
+    const baseWhere: Prisma.CompanyWhereInput = {
       isActive: true,
       verificationStatus: 'APPROVED',
     };
@@ -193,7 +194,7 @@ export class EstimateService {
     page = 1,
     limit = 10,
   ) {
-    const where: any = {};
+    const where: Prisma.EstimateRequestWhereInput = {};
 
     if (role === 'USER') {
       where.userId = userId;
@@ -359,8 +360,8 @@ export class EstimateService {
           },
         },
       });
-    } catch (err: any) {
-      if (err?.code === 'P2002') {
+    } catch (err: unknown) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new BadRequestException('이미 견적을 제출하셨습니다.');
       }
       throw err;
@@ -720,14 +721,14 @@ export class EstimateService {
 
     // Redis 캐시 (1시간)
     const cacheKey = `estimate:price:${cleaningType}:${areaBucket ? `${areaBucket.min}-${areaBucket.max}` : 'all'}:${address ?? 'all'}`;
-    const cached = await this.redis.get<any>(cacheKey);
+    const cached = await this.redis.get<{ minPrice: number; avgPrice: number; maxPrice: number; sampleCount: number }>(cacheKey);
     if (cached) return cached;
 
     // 1차: cleaningType + areaSize 구간 + 지역으로 조회
-    const baseWhere: any = {
+    const baseWhere: Prisma.MatchingWhereInput = {
       status: 'COMPLETED',
       estimatedPrice: { gt: 0 },
-      cleaningType: cleaningType as any,
+      cleaningType: cleaningType as CleaningType,
     };
 
     if (areaBucket) {
@@ -748,7 +749,7 @@ export class EstimateService {
       _count: { id: number };
     };
 
-    const aggregate = (where: any): Promise<AggResult> =>
+    const aggregate = (where: Prisma.MatchingWhereInput): Promise<AggResult> =>
       this.prisma.matching.aggregate({
         where,
         _avg: { estimatedPrice: true },
@@ -761,10 +762,10 @@ export class EstimateService {
 
     // 2차 폴백: 결과 0건이면 cleaningType + areaSize 구간만으로 조회
     if (result._count.id === 0 && (address || areaBucket)) {
-      const fallbackWhere: any = {
+      const fallbackWhere: Prisma.MatchingWhereInput = {
         status: 'COMPLETED',
         estimatedPrice: { gt: 0 },
-        cleaningType: cleaningType as any,
+        cleaningType: cleaningType as CleaningType,
       };
 
       if (areaBucket) {
@@ -779,7 +780,7 @@ export class EstimateService {
       result = await aggregate({
         status: 'COMPLETED',
         estimatedPrice: { gt: 0 },
-        cleaningType: cleaningType as any,
+        cleaningType: cleaningType as CleaningType,
       });
     }
 

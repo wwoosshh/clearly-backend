@@ -7,13 +7,15 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../common/cache/redis.service';
-import { SubscriptionTier, SubscriptionStatus } from '@prisma/client';
+import { Prisma, SubscriptionTier, SubscriptionStatus, SubscriptionPlan, CompanySubscription } from '@prisma/client';
 import {
   ActiveSubscriptionInfo,
   EstimateLimitInfo,
   GroupedPlans,
 } from './types/subscription.types';
 import { NOTIFICATION_EVENTS, NotificationEvent } from '../notification/notification.events';
+
+type SubscriptionWithPlan = CompanySubscription & { plan: SubscriptionPlan };
 
 const TIER_PRIORITY: Record<string, number> = { BASIC: 1, PRO: 2, PREMIUM: 3 };
 
@@ -56,7 +58,7 @@ export class SubscriptionService {
   async createSubscription(
     companyId: string,
     planId: string,
-  ): Promise<any> {
+  ): Promise<SubscriptionWithPlan> {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
     });
@@ -79,7 +81,7 @@ export class SubscriptionService {
       include: { plan: true },
     });
 
-    let result: any;
+    let result: SubscriptionWithPlan;
 
     if (!activeSub) {
       // ACTIVE 구독 없음 → 신규 생성
@@ -109,7 +111,7 @@ export class SubscriptionService {
   /** 신규 구독 활성화 */
   private async activateNewSubscription(
     companyId: string,
-    plan: any,
+    plan: SubscriptionPlan,
     userId: string,
   ) {
     const now = new Date();
@@ -144,8 +146,8 @@ export class SubscriptionService {
 
   /** 같은 등급 기간 합산 */
   private async extendExistingSubscription(
-    activeSub: any,
-    newPlan: any,
+    activeSub: SubscriptionWithPlan,
+    newPlan: SubscriptionPlan,
     userId: string,
   ) {
     const newEnd = new Date(activeSub.currentPeriodEnd);
@@ -177,8 +179,8 @@ export class SubscriptionService {
   /** 업그레이드 (하위 → 상위) */
   private async upgradeSubscription(
     companyId: string,
-    activeSub: any,
-    newPlan: any,
+    activeSub: SubscriptionWithPlan,
+    newPlan: SubscriptionPlan,
     userId: string,
   ) {
     const now = new Date();
@@ -228,8 +230,8 @@ export class SubscriptionService {
   /** 다운그레이드 (상위 → 하위) */
   private async downgradeSubscription(
     companyId: string,
-    activeSub: any,
-    newPlan: any,
+    activeSub: SubscriptionWithPlan,
+    newPlan: SubscriptionPlan,
     userId: string,
   ) {
     const now = new Date();
@@ -264,7 +266,7 @@ export class SubscriptionService {
   }
 
   /** 3개월 무료 Basic 구독 생성 (업체 승인 시 호출) */
-  async createFreeTrial(companyId: string): Promise<any> {
+  async createFreeTrial(companyId: string): Promise<SubscriptionWithPlan | CompanySubscription | null> {
     const basicPlan = await this.prisma.subscriptionPlan.findFirst({
       where: { tier: 'BASIC', durationMonths: 3, isActive: true },
     });
@@ -660,7 +662,7 @@ export class SubscriptionService {
 
   /** PAUSED 구독 재개 (가장 높은 등급) */
   private async resumeHighestPausedSubscription(
-    tx: any,
+    tx: Prisma.TransactionClient,
     companyId: string,
   ): Promise<boolean> {
     const paused = await tx.companySubscription.findFirst({
@@ -704,7 +706,7 @@ export class SubscriptionService {
 
   /** QUEUED 구독 활성화 (가장 높은 등급) */
   private async activateHighestQueuedSubscription(
-    tx: any,
+    tx: Prisma.TransactionClient,
     companyId: string,
   ): Promise<boolean> {
     const queued = await tx.companySubscription.findFirst({

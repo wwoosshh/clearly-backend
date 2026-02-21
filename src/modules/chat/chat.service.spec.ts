@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RedisService } from '../../common/cache/redis.service';
 
 describe('ChatService', () => {
   let service: ChatService;
@@ -78,6 +79,14 @@ describe('ChatService', () => {
           provide: EventEmitter2,
           useValue: {
             emit: jest.fn(),
+          },
+        },
+        {
+          provide: RedisService,
+          useValue: {
+            get: jest.fn().mockResolvedValue(null),
+            set: jest.fn().mockResolvedValue(undefined),
+            del: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

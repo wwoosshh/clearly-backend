@@ -289,7 +289,7 @@ export class ChatService {
   /** 사용자 채팅방 목록 조회 */
   async getUserRooms(userId: string) {
     const cacheKey = `chat:rooms:${userId}`;
-    const cached = await this.redis.get<any>(cacheKey);
+    const cached = await this.redis.get<Record<string, unknown>[]>(cacheKey);
     if (cached) return cached;
 
     // 사용자가 일반 유저인지 업체 유저인지 확인
@@ -383,7 +383,7 @@ export class ChatService {
         senderId: { not: userId },
         isRead: false,
       },
-      data: { isRead: true },
+      data: { isRead: true, readAt: new Date() },
     });
 
     await this.redis.del(`chat:rooms:${userId}`);
@@ -465,7 +465,7 @@ export class ChatService {
       throw new ForbiddenException('이 채팅방에 접근할 수 없습니다.');
     }
 
-    const updateData: any = {};
+    const updateData: { userDeclined?: boolean; companyDeclined?: boolean } = {};
     if (isUser) updateData.userDeclined = true;
     if (isCompanyUser) updateData.companyDeclined = true;
 

@@ -11,6 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -261,15 +262,15 @@ export class CompanyController {
     @Param('id') id: string,
     @Body() updateCompanyDto: UpdateCompanyDto,
     @CurrentUser('id') userId: string,
-    @Req() req: any,
+    @Req() req: Request,
   ) {
     // class-transformer의 enableImplicitConversion이 Json 필드의
     // nested object를 빈 배열로 손상시키므로 raw body에서 원본 복원
-    const raw = req.body;
+    const raw = req.body as Record<string, unknown>;
     const jsonFields = ['portfolio', 'certificationDocs', 'faq'] as const;
     for (const field of jsonFields) {
       if (raw[field] !== undefined) {
-        (updateCompanyDto as any)[field] = raw[field];
+        (updateCompanyDto as Record<string, unknown>)[field] = raw[field];
       }
     }
 

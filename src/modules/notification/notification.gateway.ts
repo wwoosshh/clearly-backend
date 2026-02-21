@@ -11,6 +11,8 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { ConnectionManager } from '../../common/websocket/connection-manager';
 
+const CONTEXT = 'notification';
+
 @WebSocketGateway({
   cors: {
     origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
@@ -35,19 +37,19 @@ export class NotificationGateway
   server: Server;
 
   private readonly logger = new Logger(NotificationGateway.name);
-  private readonly connectionManager = new ConnectionManager('notification');
   private cleanupInterval: ReturnType<typeof setInterval>;
 
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly connectionManager: ConnectionManager,
   ) {}
 
   afterInit() {
     this.logger.log('알림 웹소켓 게이트웨이 초기화 완료');
 
     this.cleanupInterval = setInterval(() => {
-      this.connectionManager.cleanupStaleConnections(this.server);
+      this.connectionManager.cleanupStaleConnections(CONTEXT, this.server);
     }, 60000);
   }
 
@@ -73,9 +75,9 @@ export class NotificationGateway
         secret: this.configService.getOrThrow('JWT_ACCESS_SECRET'),
       });
 
-      (client as any).userId = payload.sub;
+      (client as Socket & { userId: string }).userId = payload.sub;
 
-      this.connectionManager.addConnection(payload.sub, client.id, this.server);
+      await this.connectionManager.addConnection(CONTEXT, payload.sub, client.id, this.server);
 
       this.logger.log(
         `알림 클라이언트 연결: ${client.id}, userId: ${payload.sub}, 총 연결: ${this.connectionManager.getTotalConnections()}`,
@@ -86,13 +88,13 @@ export class NotificationGateway
     }
   }
 
-  handleDisconnect(client: Socket) {
-    this.connectionManager.removeConnection(client.id);
+  async handleDisconnect(client: Socket) {
+    await this.connectionManager.removeConnection(CONTEXT, client.id);
     this.logger.log(`알림 클라이언트 연결 해제: ${client.id}`);
   }
 
-  sendToUser(userId: string, event: string, data: any) {
-    const socketIds = this.connectionManager.getSocketIds(userId);
+  async sendToUser(userId: string, event: string, data: unknown) {
+    const socketIds = await this.connectionManager.getSocketIds(CONTEXT, userId);
     if (socketIds.length > 0) {
       for (const socketId of socketIds) {
         this.server.to(socketId).emit(event, data);

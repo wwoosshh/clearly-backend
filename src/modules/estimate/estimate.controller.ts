@@ -90,7 +90,7 @@ export class EstimateController {
   @ApiOperation({ summary: '견적요청 목록' })
   @ApiResponse({ status: 200, description: '견적요청 목록 조회 성공' })
   async getEstimateRequests(
-    @CurrentUser() user: any,
+    @CurrentUser() user: { id: string; role: string },
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {

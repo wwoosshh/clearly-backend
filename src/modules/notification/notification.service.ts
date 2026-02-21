@@ -114,7 +114,7 @@ export class NotificationService {
   async markAsRead(id: string, userId: string) {
     const notification = await this.prisma.notification.updateMany({
       where: { id, userId },
-      data: { isRead: true },
+      data: { isRead: true, readAt: new Date() },
     });
 
     await this.redis.delPattern(`notification:*:${userId}:*`);
@@ -126,7 +126,7 @@ export class NotificationService {
   async markAllAsRead(userId: string) {
     const result = await this.prisma.notification.updateMany({
       where: { userId, isRead: false },
-      data: { isRead: true },
+      data: { isRead: true, readAt: new Date() },
     });
 
     await this.redis.delPattern(`notification:*:${userId}:*`);

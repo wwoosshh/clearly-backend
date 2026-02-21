@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
-import { MatchingStatus } from '@prisma/client';
+import { Prisma, MatchingStatus, CancelledBy, CleaningType } from '@prisma/client';
 import {
   NOTIFICATION_EVENTS,
   NotificationEvent,
@@ -41,7 +41,7 @@ export class MatchingService {
       data: {
         userId,
         companyId: data.companyId,
-        cleaningType: data.cleaningType as any,
+        cleaningType: data.cleaningType as CleaningType,
         address: data.address,
         detailAddress: data.detailAddress,
         areaSize: data.areaSize,
@@ -77,10 +77,10 @@ export class MatchingService {
     const page = Number(filters.page) || 1;
     const limit = Number(filters.limit) || 10;
 
-    const where: any = {};
+    const where: Prisma.MatchingWhereInput = {};
     if (filters.userId) where.userId = filters.userId;
     if (filters.companyId) where.companyId = filters.companyId;
-    if (filters.status) where.status = filters.status;
+    if (filters.status) where.status = filters.status as MatchingStatus;
 
     const [matchings, total] = await Promise.all([
       this.prisma.matching.findMany({
@@ -276,7 +276,7 @@ export class MatchingService {
       throw new BadRequestException('이미 완료되었거나 취소된 매칭입니다.');
     }
 
-    const cancelledBy = isUser ? 'USER' : 'COMPANY';
+    const cancelledBy: CancelledBy = isUser ? CancelledBy.USER : CancelledBy.COMPANY;
 
     const updated = await this.prisma.matching.update({
       where: { id: matchingId },

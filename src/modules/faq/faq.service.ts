@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, Faq } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../common/cache/redis.service';
 import { CreateFaqDto } from './dto/create-faq.dto';
@@ -15,10 +16,10 @@ export class FaqService {
 
   async getPublicFaqs(search?: string) {
     const cacheKey = search ? `faq:public:${search}` : 'faq:public';
-    const cached = await this.redis.get<any>(cacheKey);
+    const cached = await this.redis.get<Record<string, Faq[]>>(cacheKey);
     if (cached) return cached;
 
-    const where: any = { isVisible: true };
+    const where: Prisma.FaqWhereInput = { isVisible: true };
 
     if (search) {
       where.OR = [
@@ -50,7 +51,7 @@ export class FaqService {
   async getAdminFaqs(page: number, limit: number, category?: string) {
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.FaqWhereInput = {};
     if (category) {
       where.category = category;
     }

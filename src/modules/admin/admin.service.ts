@@ -1,8 +1,23 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma, RefundStatus, ReportStatus, ReportTargetType, EstimateRequestStatus, CleaningType, MatchingStatus, SubscriptionStatus, SubscriptionTier, UserRole, VerificationStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { ResolveReportDto, ReportActionType } from './dto/resolve-report.dto';
 import { SystemSettingService } from '../system-setting/system-setting.service';
+
+interface UserFilters { search?: string; role?: string; isActive?: string; }
+interface ChatRoomFilters { search?: string; isActive?: string; refundStatus?: string; }
+interface ReportFilters { status?: string; targetType?: string; }
+interface ReviewFilters { isVisible?: string; minRating?: string; maxRating?: string; }
+interface EstimateRequestFilters { status?: string; cleaningType?: string; }
+interface MatchingFilters { status?: string; }
+interface SubscriptionFilters { status?: string; tier?: string; search?: string; }
+
+type ReportTarget =
+  | { id: string; name: string; email: string; phone?: string | null; role?: string; isActive?: boolean }
+  | { id: string; businessName: string; businessNumber?: string; verificationStatus?: string; isActive?: boolean }
+  | { id: string; content: string | null; rating: number; isVisible?: boolean; user?: { id: string; name: string } | null; company?: { id: string; businessName: string } | null }
+  | null;
 
 @Injectable()
 export class AdminService {
@@ -68,12 +83,12 @@ export class AdminService {
 
   // ─── 사용자 관리 ────────────────────────────────────────
 
-  async getUsers(page: number, limit: number, filters: any) {
+  async getUsers(page: number, limit: number, filters: UserFilters) {
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.UserWhereInput = {};
     if (filters?.role) {
-      where.role = filters.role;
+      where.role = filters.role as UserRole;
     }
     if (filters?.isActive !== undefined) {
       where.isActive = filters.isActive === 'true';
@@ -137,7 +152,7 @@ export class AdminService {
     const reviewWhere = isCompany ? { companyId } : { userId };
 
     // 신고: 본인이 신고하거나 신고당한 것 (업체일 경우 companyId도 포함)
-    const reportOrConditions: any[] = [
+    const reportOrConditions: Prisma.ReportWhereInput[] = [
       { reporterId: userId },
       { targetType: 'USER', targetId: userId },
     ];
@@ -145,7 +160,7 @@ export class AdminService {
       reportOrConditions.push({ targetType: 'COMPANY', targetId: companyId });
     }
 
-    const queries: Promise<any>[] = [
+    const queries: Promise<unknown>[] = [
       this.prisma.matching.findMany({
         where: matchingWhere,
         take: 10,
@@ -232,7 +247,7 @@ export class AdminService {
     const newIsActive = !user.isActive;
 
     return this.prisma.$transaction(async (tx) => {
-      const updateData: any = { isActive: newIsActive };
+      const updateData: Prisma.UserUpdateInput = { isActive: newIsActive };
       if (newIsActive) {
         updateData.deactivatedAt = null;
       }
@@ -258,9 +273,9 @@ export class AdminService {
   async getCompanies(page: number, limit: number, status?: string) {
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.CompanyWhereInput = {};
     if (status) {
-      where.verificationStatus = status;
+      where.verificationStatus = status as VerificationStatus;
     }
 
     const [companies, total] = await Promise.all([
@@ -486,15 +501,15 @@ export class AdminService {
 
   // ─── 채팅 모니터링 ─────────────────────────────────────
 
-  async getChatRooms(page: number, limit: number, filters: any) {
+  async getChatRooms(page: number, limit: number, filters: ChatRoomFilters) {
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.ChatRoomWhereInput = {};
     if (filters?.isActive !== undefined) {
       where.isActive = filters.isActive === 'true';
     }
     if (filters?.refundStatus) {
-      where.refundStatus = filters.refundStatus;
+      where.refundStatus = filters.refundStatus as RefundStatus;
     }
     if (filters?.search) {
       where.OR = [
@@ -611,15 +626,15 @@ export class AdminService {
 
   // ─── 신고 관리 ──────────────────────────────────────────
 
-  async getReports(page: number, limit: number, filters?: any) {
+  async getReports(page: number, limit: number, filters?: ReportFilters) {
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.ReportWhereInput = {};
     if (filters?.status) {
-      where.status = filters.status;
+      where.status = filters.status as ReportStatus;
     }
     if (filters?.targetType) {
-      where.targetType = filters.targetType;
+      where.targetType = filters.targetType as ReportTargetType;
     }
 
     const [reports, total] = await Promise.all([
@@ -658,7 +673,7 @@ export class AdminService {
         : ([] as { id: string; content: string | null; rating: number }[]),
     ]);
 
-    const targetMap = new Map<string, any>();
+    const targetMap = new Map<string, Record<string, unknown>>();
     for (const u of users) targetMap.set(u.id, u);
     for (const c of companies) targetMap.set(c.id, c);
     for (const r of reviews) targetMap.set(r.id, r);
@@ -700,7 +715,7 @@ export class AdminService {
     }
 
     // Resolve target entity
-    let target: any = null;
+    let target: ReportTarget = null;
     if (report.targetType === 'USER') {
       target = await this.prisma.user.findUnique({
         where: { id: report.targetId },
@@ -827,18 +842,18 @@ export class AdminService {
 
   // ─── 리뷰 관리 ──────────────────────────────────────────
 
-  async getReviews(page: number, limit: number, filters?: any) {
+  async getReviews(page: number, limit: number, filters?: ReviewFilters) {
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.ReviewWhereInput = {};
     if (filters?.isVisible !== undefined) {
       where.isVisible = filters.isVisible === 'true';
     }
-    if (filters?.minRating) {
-      where.rating = { ...where.rating, gte: parseInt(filters.minRating) };
-    }
-    if (filters?.maxRating) {
-      where.rating = { ...where.rating, lte: parseInt(filters.maxRating) };
+    if (filters?.minRating || filters?.maxRating) {
+      const ratingFilter: Prisma.IntFilter = {};
+      if (filters?.minRating) ratingFilter.gte = parseInt(filters.minRating);
+      if (filters?.maxRating) ratingFilter.lte = parseInt(filters.maxRating);
+      where.rating = ratingFilter;
     }
 
     const [reviews, total] = await Promise.all([
@@ -883,15 +898,15 @@ export class AdminService {
 
   // ─── 견적요청 모니터링 ──────────────────────────────────
 
-  async getEstimateRequests(page: number, limit: number, filters?: any) {
+  async getEstimateRequests(page: number, limit: number, filters?: EstimateRequestFilters) {
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.EstimateRequestWhereInput = {};
     if (filters?.status) {
-      where.status = filters.status;
+      where.status = filters.status as EstimateRequestStatus;
     }
     if (filters?.cleaningType) {
-      where.cleaningType = filters.cleaningType;
+      where.cleaningType = filters.cleaningType as CleaningType;
     }
 
     const [estimateRequests, total] = await Promise.all([
@@ -921,12 +936,12 @@ export class AdminService {
 
   // ─── 매칭 모니터링 ─────────────────────────────────────
 
-  async getMatchings(page: number, limit: number, filters?: any) {
+  async getMatchings(page: number, limit: number, filters?: MatchingFilters) {
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.MatchingWhereInput = {};
     if (filters?.status) {
-      where.status = filters.status;
+      where.status = filters.status as MatchingStatus;
     }
 
     const [matchings, total] = await Promise.all([
@@ -956,12 +971,12 @@ export class AdminService {
 
   // ─── 구독 관리 ───────────────────────────────────────────
 
-  async getSubscriptions(page: number, limit: number, filters: any) {
+  async getSubscriptions(page: number, limit: number, filters: SubscriptionFilters) {
     const skip = (page - 1) * limit;
-    const where: any = {};
-    if (filters?.status) where.status = filters.status;
+    const where: Prisma.CompanySubscriptionWhereInput = {};
+    if (filters?.status) where.status = filters.status as SubscriptionStatus;
     if (filters?.tier) {
-      where.plan = { tier: filters.tier };
+      where.plan = { tier: filters.tier as SubscriptionTier };
     }
     if (filters?.search) {
       where.company = {
@@ -1098,7 +1113,7 @@ export class AdminService {
     return this.settings.getAll();
   }
 
-  async updateSettings(data: Record<string, any>) {
+  async updateSettings(data: Record<string, unknown>) {
     for (const [key, value] of Object.entries(data)) {
       await this.settings.set(key, value);
     }
