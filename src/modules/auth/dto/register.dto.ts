@@ -2,11 +2,13 @@ import {
   IsEmail,
   IsNotEmpty,
   IsString,
+  IsBoolean,
+  IsOptional,
   MinLength,
   MaxLength,
   Matches,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RegisterDto {
   @ApiProperty({ description: '이메일 주소', example: 'user@example.com' })
@@ -38,4 +40,9 @@ export class RegisterDto {
   @IsString({ message: '전화번호는 문자열이어야 합니다.' })
   @IsNotEmpty({ message: '전화번호는 필수 입력 항목입니다.' })
   phone: string;
+
+  @ApiPropertyOptional({ description: '마케팅 수신 동의', example: false })
+  @IsBoolean({ message: '마케팅 수신 동의는 boolean이어야 합니다.' })
+  @IsOptional()
+  agreeMarketing?: boolean;
 }

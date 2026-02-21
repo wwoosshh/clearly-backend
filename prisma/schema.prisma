@@ -178,6 +178,8 @@ model User {
   oauthId       String?       @map("oauth_id") @db.VarChar(255)
   isActive             Boolean       @default(true) @map("is_active")
   deactivatedAt        DateTime?     @map("deactivated_at")
+  agreeMarketing       Boolean       @default(false) @map("agree_marketing")
+  marketingConsentAt   DateTime?     @map("marketing_consent_at")
   passwordResetToken   String?       @map("password_reset_token")
   passwordResetExpiry  DateTime?     @map("password_reset_expiry")
   createdAt            DateTime      @default(now()) @map("created_at")

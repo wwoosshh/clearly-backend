@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsString,
   IsOptional,
+  IsBoolean,
   IsArray,
   IsNumber,
   Min,
@@ -117,4 +118,9 @@ export class RegisterCompanyDto {
   @Min(0, { message: '최대 가격은 0 이상이어야 합니다.' })
   @IsOptional()
   maxPrice?: number;
+
+  @ApiPropertyOptional({ description: '마케팅 수신 동의', example: false })
+  @IsBoolean({ message: '마케팅 수신 동의는 boolean이어야 합니다.' })
+  @IsOptional()
+  agreeMarketing?: boolean;
 }

@@ -40,7 +40,7 @@ export class AuthService {
   ) {}
 
   async register(registerDto: RegisterDto) {
-    const { email, password, name, phone } = registerDto;
+    const { email, password, name, phone, agreeMarketing } = registerDto;
 
     const existingUser = await this.prisma.user.findUnique({
       where: { email },
@@ -60,6 +60,8 @@ export class AuthService {
         phone,
         role: 'USER',
         isActive: true,
+        agreeMarketing: agreeMarketing ?? false,
+        marketingConsentAt: agreeMarketing ? new Date() : null,
       },
     });
 
@@ -94,6 +96,7 @@ export class AuthService {
       description,
       minPrice,
       maxPrice,
+      agreeMarketing,
     } = registerCompanyDto;
 
     const existingUser = await this.prisma.user.findUnique({
@@ -135,6 +138,8 @@ export class AuthService {
           phone,
           role: 'COMPANY',
           isActive: false,
+          agreeMarketing: agreeMarketing ?? false,
+          marketingConsentAt: agreeMarketing ? new Date() : null,
         },
       });
 
