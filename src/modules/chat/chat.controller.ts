@@ -112,8 +112,17 @@ export class ChatController {
   async completeTransaction(
     @Param('id') roomId: string,
     @CurrentUser('id') userId: string,
+    @Body()
+    body?: {
+      cleaningType?: string;
+      address?: string;
+      estimatedPrice?: number;
+      areaSize?: number;
+      desiredDate?: string;
+      desiredTime?: string;
+    },
   ) {
-    return this.chatService.completeTransaction(roomId, userId);
+    return this.chatService.completeTransaction(roomId, userId, body);
   }
 
   @Patch('rooms/:id/decline')

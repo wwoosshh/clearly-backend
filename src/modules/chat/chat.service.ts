@@ -231,6 +231,7 @@ export class ChatService {
           select: {
             id: true,
             status: true,
+            cleaningType: true,
             completionImages: true,
             completionReportedAt: true,
             completedAt: true,
@@ -343,6 +344,7 @@ export class ChatService {
           select: {
             id: true,
             status: true,
+            cleaningType: true,
             completionImages: true,
             completionReportedAt: true,
             completedAt: true,
@@ -409,7 +411,18 @@ export class ChatService {
   }
 
   /** 거래완료 처리 */
-  async completeTransaction(roomId: string, userId: string) {
+  async completeTransaction(
+    roomId: string,
+    userId: string,
+    details?: {
+      cleaningType?: string;
+      address?: string;
+      estimatedPrice?: number;
+      areaSize?: number;
+      desiredDate?: string;
+      desiredTime?: string;
+    },
+  ) {
     const room = await this.prisma.chatRoom.findUnique({
       where: { id: roomId },
       include: { company: true, matching: true },
@@ -438,13 +451,39 @@ export class ChatService {
       );
     }
 
-    // 매칭 상태를 COMPLETED로 변경
+    // 업데이트 데이터 구성
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updateData: Record<string, any> = {
+      status: 'COMPLETED',
+      completedAt: new Date(),
+    };
+
+    // 직접 채팅 상담(CONSULTATION) 매칭인 경우 실제 거래 정보로 업데이트
+    if (room.matching.cleaningType === 'CONSULTATION' && details) {
+      if (details.cleaningType) {
+        updateData.cleaningType = details.cleaningType;
+      }
+      if (details.address) {
+        updateData.address = details.address;
+      }
+      if (details.estimatedPrice !== undefined && details.estimatedPrice !== null) {
+        updateData.estimatedPrice = details.estimatedPrice;
+      }
+      if (details.areaSize !== undefined && details.areaSize !== null) {
+        updateData.areaSize = details.areaSize;
+      }
+      if (details.desiredDate) {
+        updateData.desiredDate = new Date(details.desiredDate);
+      }
+      if (details.desiredTime) {
+        updateData.desiredTime = details.desiredTime;
+      }
+    }
+
+    // 매칭 상태를 COMPLETED로 변경 (+ 상세정보 반영)
     const matching = await this.prisma.matching.update({
       where: { id: room.matching.id },
-      data: {
-        status: 'COMPLETED',
-        completedAt: new Date(),
-      },
+      data: updateData,
     });
 
     // 시스템 메시지
