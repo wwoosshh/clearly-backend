@@ -45,8 +45,20 @@ export class ChatService {
       orderBy: { createdAt: 'desc' },
       include: {
         company: { include: { user: true } },
+        user: { select: { id: true, name: true, profileImage: true } },
         messages: { take: 1, orderBy: { createdAt: 'desc' } },
-        matching: { select: { status: true } },
+        // 프론트엔드에서 cleaningType, completionReportedAt 등을 사용하므로 전체 반환 필수
+        matching: {
+          select: {
+            id: true,
+            status: true,
+            cleaningType: true,
+            completionImages: true,
+            completionReportedAt: true,
+            completedAt: true,
+            review: { select: { id: true } },
+          },
+        },
       },
     });
 
@@ -82,6 +94,18 @@ export class ChatService {
         include: {
           company: { include: { user: true } },
           user: true,
+          // 프론트엔드에서 cleaningType을 이용해 모달 분기하므로 matching 전체 반환 필수
+          matching: {
+            select: {
+              id: true,
+              status: true,
+              cleaningType: true,
+              completionImages: true,
+              completionReportedAt: true,
+              completedAt: true,
+              review: { select: { id: true } },
+            },
+          },
         },
       });
 
