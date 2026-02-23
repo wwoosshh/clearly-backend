@@ -131,8 +131,17 @@ export class MatchingController {
   async confirmCompletion(
     @CurrentUser('id') userId: string,
     @Param('id') matchingId: string,
+    @Body()
+    body?: {
+      cleaningType?: string;
+      address?: string;
+      estimatedPrice?: number;
+      areaSize?: number;
+      desiredDate?: string;
+      desiredTime?: string;
+    },
   ) {
-    return this.matchingService.confirmCompletion(userId, matchingId);
+    return this.matchingService.confirmCompletion(userId, matchingId, body);
   }
 
   @Patch('requests/:id/cancel')

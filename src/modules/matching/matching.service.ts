@@ -202,7 +202,18 @@ export class MatchingService {
   }
 
   /** 사용자: 서비스 완료 확인 */
-  async confirmCompletion(userId: string, matchingId: string) {
+  async confirmCompletion(
+    userId: string,
+    matchingId: string,
+    details?: {
+      cleaningType?: string;
+      address?: string;
+      estimatedPrice?: number;
+      areaSize?: number;
+      desiredDate?: string;
+      desiredTime?: string;
+    },
+  ) {
     const matching = await this.prisma.matching.findUnique({
       where: { id: matchingId },
       include: { company: { select: { userId: true } } },
@@ -220,12 +231,27 @@ export class MatchingService {
       );
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updateData: Record<string, any> = {
+      status: 'COMPLETED',
+      completedAt: new Date(),
+    };
+
+    // 직접 채팅 상담(CONSULTATION) 매칭인 경우 실제 거래 정보로 업데이트
+    if (matching.cleaningType === 'CONSULTATION' && details) {
+      if (details.cleaningType) updateData.cleaningType = details.cleaningType;
+      if (details.address) updateData.address = details.address;
+      if (details.estimatedPrice !== undefined && details.estimatedPrice !== null)
+        updateData.estimatedPrice = details.estimatedPrice;
+      if (details.areaSize !== undefined && details.areaSize !== null)
+        updateData.areaSize = details.areaSize;
+      if (details.desiredDate) updateData.desiredDate = new Date(details.desiredDate);
+      if (details.desiredTime) updateData.desiredTime = details.desiredTime;
+    }
+
     const updated = await this.prisma.matching.update({
       where: { id: matchingId },
-      data: {
-        status: 'COMPLETED',
-        completedAt: new Date(),
-      },
+      data: updateData,
     });
 
     this.logger.log(
