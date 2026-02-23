@@ -12,6 +12,7 @@ import {
   NOTIFICATION_EVENTS,
   NotificationEvent,
 } from '../notification/notification.events';
+import { RedisService } from '../../common/cache/redis.service';
 
 @Injectable()
 export class MatchingService {
@@ -20,6 +21,7 @@ export class MatchingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly redis: RedisService,
   ) {}
 
   /** 매칭 생성 (채팅 상담 직접 시작 시) */
@@ -156,6 +158,7 @@ export class MatchingService {
       where: { id: matchingId },
       include: { company: { select: { userId: true } } },
     });
+    const matchingUserId = matching?.userId;
 
     if (!matching) {
       throw new NotFoundException('매칭 정보를 찾을 수 없습니다.');
@@ -185,6 +188,14 @@ export class MatchingService {
     this.logger.log(
       `서비스 완료 보고: matchingId=${matchingId}, images=${images.length}장`,
     );
+
+    // 채팅방 목록 캐시 무효화 (사용자에게 완료보고 배너가 즉시 표시되도록)
+    if (matchingUserId) {
+      await this.redis.del(
+        `chat:rooms:${matchingUserId}`,
+        `chat:rooms:${userId}`,
+      );
+    }
 
     // 사용자에게 완료 확인 요청 알림
     this.eventEmitter.emit(
@@ -216,7 +227,10 @@ export class MatchingService {
   ) {
     const matching = await this.prisma.matching.findUnique({
       where: { id: matchingId },
-      include: { company: { select: { userId: true } } },
+      include: {
+        company: { select: { userId: true } },
+        chatRoom: { select: { id: true } },
+      },
     });
 
     if (!matching) {
@@ -257,6 +271,25 @@ export class MatchingService {
     this.logger.log(
       `서비스 완료 확인: matchingId=${matchingId}, userId=${userId}`,
     );
+
+    // 채팅방 목록 캐시 무효화 (양쪽 모두 즉시 최신 상태 반영)
+    const cacheKeys = [`chat:rooms:${userId}`];
+    if (matching.company?.userId) {
+      cacheKeys.push(`chat:rooms:${matching.company.userId}`);
+    }
+    await this.redis.del(...cacheKeys);
+
+    // 시스템 메시지 전송 (리뷰 작성 배너 표시용)
+    if (matching.chatRoom?.id) {
+      await this.prisma.chatMessage.create({
+        data: {
+          roomId: matching.chatRoom.id,
+          senderId: userId,
+          content: '거래가 완료되었습니다. 리뷰를 작성해주세요.',
+          messageType: 'SYSTEM',
+        },
+      });
+    }
 
     // 업체에게 완료 알림
     if (matching.company) {
