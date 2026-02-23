@@ -58,39 +58,56 @@ export class ChatService {
       return existing;
     }
 
-    // 채팅방 생성
-    const chatRoom = await this.prisma.chatRoom.create({
-      data: {
-        userId,
-        companyId,
-      },
-      include: {
-        company: { include: { user: true } },
-        user: true,
-      },
+    // 매칭 레코드 + 채팅방을 트랜잭션으로 함께 생성
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. 매칭 레코드 생성 (직접 채팅 상담 방식)
+      const matching = await tx.matching.create({
+        data: {
+          userId,
+          companyId,
+          cleaningType: 'CONSULTATION',
+          address: '직접 채팅 상담',
+          status: 'ACCEPTED',
+        },
+      });
+
+      // 2. 채팅방 생성 (matchingId 연결)
+      const chatRoom = await tx.chatRoom.create({
+        data: {
+          userId,
+          companyId,
+          matchingId: matching.id,
+        },
+        include: {
+          company: { include: { user: true } },
+          user: true,
+        },
+      });
+
+      // 3. 업체 매칭 카운트 증가
+      await tx.company.update({
+        where: { id: companyId },
+        data: { totalMatchings: { increment: 1 } },
+      });
+
+      return { matching, chatRoom };
     });
 
-    // 시스템 메시지 생성
+    // 4. 시스템 메시지 생성 (트랜잭션 밖에서 처리)
     await this.prisma.chatMessage.create({
       data: {
-        roomId: chatRoom.id,
+        roomId: result.chatRoom.id,
         senderId: userId,
         content: '채팅 상담이 시작되었습니다.',
         messageType: 'SYSTEM',
       },
     });
 
-    // 업체 매칭 카운트 증가
-    await this.prisma.company.update({
-      where: { id: companyId },
-      data: { totalMatchings: { increment: 1 } },
-    });
-
     this.logger.log(
-      `채팅방 생성: roomId=${chatRoom.id}, userId=${userId}, companyId=${companyId}`,
+      `채팅방 생성: roomId=${result.chatRoom.id}, matchingId=${result.matching.id}, userId=${userId}, companyId=${companyId}`,
     );
 
-    return chatRoom;
+    return result.chatRoom;
   }
 
   /** 메시지 전송 */
