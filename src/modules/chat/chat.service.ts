@@ -35,13 +35,14 @@ export class ChatService {
       );
     }
 
-    // 이미 존재하는 채팅방 확인
+    // 이미 존재하는 채팅방 확인 (최신 순으로 정렬 — findFirst는 orderBy 없으면 순서 미보장)
     const existing = await this.prisma.chatRoom.findFirst({
       where: {
         userId,
         companyId,
         isActive: true,
       },
+      orderBy: { createdAt: 'desc' },
       include: {
         company: { include: { user: true } },
         messages: { take: 1, orderBy: { createdAt: 'desc' } },
