@@ -85,8 +85,6 @@ export class EstimateController {
   }
 
   @Get('requests')
-  @UseGuards(SubscriptionGuard)
-  @RequireSubscription('BASIC')
   @ApiOperation({ summary: '견적요청 목록' })
   @ApiResponse({ status: 200, description: '견적요청 목록 조회 성공' })
   async getEstimateRequests(
