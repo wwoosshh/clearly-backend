@@ -202,7 +202,18 @@ export class MatchingService {
   }
 
   /** 사용자: 서비스 완료 확인 */
-  async confirmCompletion(userId: string, matchingId: string) {
+  async confirmCompletion(
+    userId: string,
+    matchingId: string,
+    details?: {
+      cleaningType?: string;
+      address?: string;
+      estimatedPrice?: number;
+      areaSize?: number;
+      desiredDate?: string;
+      desiredTime?: string;
+    },
+  ) {
     const matching = await this.prisma.matching.findUnique({
       where: { id: matchingId },
       include: { company: { select: { userId: true } } },
@@ -225,6 +236,21 @@ export class MatchingService {
       data: {
         status: 'COMPLETED',
         completedAt: new Date(),
+        // CONSULTATION 타입일 때 실제 작업 정보 업데이트
+        ...(details?.cleaningType
+          ? { cleaningType: details.cleaningType as CleaningType }
+          : {}),
+        ...(details?.address ? { address: details.address } : {}),
+        ...(details?.estimatedPrice !== undefined
+          ? { estimatedPrice: details.estimatedPrice }
+          : {}),
+        ...(details?.areaSize !== undefined
+          ? { areaSize: details.areaSize }
+          : {}),
+        ...(details?.desiredDate
+          ? { desiredDate: new Date(details.desiredDate) }
+          : {}),
+        ...(details?.desiredTime ? { desiredTime: details.desiredTime } : {}),
       },
     });
 
