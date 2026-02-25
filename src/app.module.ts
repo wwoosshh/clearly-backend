@@ -20,6 +20,7 @@ import { UploadModule } from './modules/upload/upload.module';
 import { EstimateModule } from './modules/estimate/estimate.module';
 import { ReportModule } from './modules/report/report.module';
 import { FaqModule } from './modules/faq/faq.module';
+import { BannerModule } from './modules/banner/banner.module';
 import { InquiryModule } from './modules/inquiry/inquiry.module';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
 import { HealthModule } from './modules/health/health.module';
@@ -57,6 +58,7 @@ import { RedisModule } from './common/cache/redis.module';
     EstimateModule,
     ReportModule,
     FaqModule,
+    BannerModule,
     InquiryModule,
     GeocodingModule,
     HealthModule,

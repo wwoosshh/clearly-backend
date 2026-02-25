@@ -658,3 +658,24 @@ model CompanyTag {
   @@index([companyId])
   @@map("company_tags")
 }
+
+// ==================
+// 배너 시스템
+// ==================
+
+model Banner {
+  id        String   @id @default(uuid())
+  title     String   @db.VarChar(100)
+  subtitle  String?  @db.VarChar(200)
+  imageUrl  String?  @map("image_url") @db.VarChar(500)
+  bgColor   String   @default("#2d6a4f") @map("bg_color") @db.VarChar(50)
+  linkUrl   String?  @map("link_url") @db.VarChar(500)
+  linkText  String?  @map("link_text") @db.VarChar(50)
+  sortOrder Int      @default(0) @map("sort_order")
+  isVisible Boolean  @default(true) @map("is_visible")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isVisible, sortOrder])
+  @@map("banners")
+}
