@@ -34,6 +34,11 @@ export class SearchCompanyDto {
   @IsOptional()
   region?: string;
 
+  @ApiPropertyOptional({ description: '서비스 티어 필터 (예: CLEAN)' })
+  @IsString()
+  @IsOptional()
+  serviceTier?: string;
+
   @ApiPropertyOptional({
     description: '정렬 기준',
     enum: SortBy,

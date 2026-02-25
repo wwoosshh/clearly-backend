@@ -119,6 +119,7 @@ export class AuthService {
       minPrice,
       maxPrice,
       agreeMarketing,
+      serviceTiers,
     } = registerCompanyDto;
 
     const existingUser = await this.prisma.user.findUnique({
@@ -176,6 +177,7 @@ export class AuthService {
           latitude,
           longitude,
           specialties: specialties || [],
+          serviceTiers: serviceTiers || [],
           serviceAreas: serviceAreas || [],
           description,
           minPrice,

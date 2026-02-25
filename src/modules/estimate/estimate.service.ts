@@ -79,6 +79,7 @@ export class EstimateService {
         desiredDate: dto.desiredDate ? new Date(dto.desiredDate) : undefined,
         desiredTime: dto.desiredTime,
         message: dto.message,
+        serviceTier: dto.serviceTier,
         budget: dto.budget,
         images: dto.images,
         checklist: dto.checklist ?? undefined,
@@ -121,6 +122,7 @@ export class EstimateService {
         userId: true,
         serviceAreas: true,
         specialties: true,
+        serviceTiers: true,
         address: true,
         latitude: true,
         longitude: true,
@@ -128,7 +130,7 @@ export class EstimateService {
       },
     });
 
-    // 전문분야 + 정밀 거리 필터 (메모리 내 최소한의 필터링)
+    // 전문분야 + 서비스 티어 + 정밀 거리 필터 (메모리 내 최소한의 필터링)
     const matchingCompanies = candidates.filter((company) => {
       const specs = Array.isArray(company.specialties)
         ? (company.specialties as string[])
@@ -136,6 +138,14 @@ export class EstimateService {
       const hasSpecialty =
         specs.length === 0 || specs.some((s) => s === dto.cleaningType);
       if (!hasSpecialty) return false;
+
+      // 서비스 티어 필터: 요청에 티어가 지정된 경우, 해당 티어를 가진 업체만 매칭
+      if (dto.serviceTier) {
+        const tiers = Array.isArray(company.serviceTiers)
+          ? (company.serviceTiers as string[])
+          : [];
+        if (tiers.length > 0 && !tiers.includes(dto.serviceTier)) return false;
+      }
 
       // 정밀 거리 검증 (bounding box로 걸러진 후보만)
       if (reqLat && reqLng && company.latitude && company.longitude) {
@@ -712,95 +722,62 @@ export class EstimateService {
   }
 
   /** 예상 가격 조회 (공개 API) */
+  /**
+   * 예상 가격 계산 (계산식 기반)
+   * 공식: 면적(평) × 면적당 단가 × 티어상수
+   *
+   * 면적당 단가: 전 유형 20,000원
+   * 티어상수: CLEAN=1.0, DEEP_CLEAN=1.5, PREMIUM_CLEAN=2.0
+   * 미선택 시 전체 티어 범위(min~max) 반환
+   */
   async getPriceEstimate(
     cleaningType: string,
     areaSize?: number,
-    address?: string,
+    serviceTier?: string,
   ) {
-    const areaBucket = areaSize ? this.getAreaBucket(areaSize) : null;
-
-    // Redis 캐시 (1시간)
-    const cacheKey = `estimate:price:${cleaningType}:${areaBucket ? `${areaBucket.min}-${areaBucket.max}` : 'all'}:${address ?? 'all'}`;
-    const cached = await this.redis.get<{ minPrice: number; avgPrice: number; maxPrice: number; sampleCount: number }>(cacheKey);
-    if (cached) return cached;
-
-    // 1차: cleaningType + areaSize 구간 + 지역으로 조회
-    const baseWhere: Prisma.MatchingWhereInput = {
-      status: 'COMPLETED',
-      estimatedPrice: { gt: 0 },
-      cleaningType: cleaningType as CleaningType,
+    // 면적당 단가 (추후 청소 유형별로 분리 가능)
+    const PRICE_PER_PYEONG: Record<string, number> = {
+      MOVE_IN: 20000,
+      MOVE_OUT: 20000,
+      FULL: 20000,
+      OFFICE: 20000,
+      STORE: 20000,
+      AIRCON: 20000,
+      SPECIAL: 20000,
     };
 
-    if (areaBucket) {
-      baseWhere.areaSize = { gte: areaBucket.min, lte: areaBucket.max };
-    }
-
-    if (address) {
-      const region = address.split(/[\s,]+/)[0];
-      if (region && region.length >= 2) {
-        baseWhere.address = { contains: region };
-      }
-    }
-
-    type AggResult = {
-      _avg: { estimatedPrice: number | null };
-      _min: { estimatedPrice: number | null };
-      _max: { estimatedPrice: number | null };
-      _count: { id: number };
+    const TIER_MULTIPLIER: Record<string, number> = {
+      CLEAN: 1.0,
+      DEEP_CLEAN: 1.5,
+      PREMIUM_CLEAN: 2.0,
     };
 
-    const aggregate = (where: Prisma.MatchingWhereInput): Promise<AggResult> =>
-      this.prisma.matching.aggregate({
-        where,
-        _avg: { estimatedPrice: true },
-        _min: { estimatedPrice: true },
-        _max: { estimatedPrice: true },
-        _count: { id: true },
-      }) as Promise<AggResult>;
+    const unitPrice = PRICE_PER_PYEONG[cleaningType] ?? 20000;
+    const area = areaSize && areaSize > 0 ? areaSize : 25; // 기본 25평
 
-    let result = await aggregate(baseWhere);
-
-    // 2차 폴백: 결과 0건이면 cleaningType + areaSize 구간만으로 조회
-    if (result._count.id === 0 && (address || areaBucket)) {
-      const fallbackWhere: Prisma.MatchingWhereInput = {
-        status: 'COMPLETED',
-        estimatedPrice: { gt: 0 },
-        cleaningType: cleaningType as CleaningType,
+    if (serviceTier && TIER_MULTIPLIER[serviceTier]) {
+      // 특정 티어 선택 시 해당 티어 기준 가격
+      const multiplier = TIER_MULTIPLIER[serviceTier];
+      const price = Math.round(area * unitPrice * multiplier);
+      return {
+        minPrice: price,
+        avgPrice: price,
+        maxPrice: price,
+        sampleCount: 1,
       };
-
-      if (areaBucket) {
-        fallbackWhere.areaSize = { gte: areaBucket.min, lte: areaBucket.max };
-      }
-
-      result = await aggregate(fallbackWhere);
     }
 
-    // 3차 폴백: cleaningType만으로 조회
-    if (result._count.id === 0) {
-      result = await aggregate({
-        status: 'COMPLETED',
-        estimatedPrice: { gt: 0 },
-        cleaningType: cleaningType as CleaningType,
-      });
-    }
+    // 티어 미선택 시 전체 범위 (클린 ~ 프리미엄클린)
+    const minPrice = Math.round(area * unitPrice * TIER_MULTIPLIER.CLEAN);
+    const maxPrice = Math.round(area * unitPrice * TIER_MULTIPLIER.PREMIUM_CLEAN);
+    const avgPrice = Math.round(area * unitPrice * TIER_MULTIPLIER.DEEP_CLEAN);
 
-    const priceResult = {
-      minPrice: result._min.estimatedPrice ?? 0,
-      avgPrice: Math.round(result._avg.estimatedPrice ?? 0),
-      maxPrice: result._max.estimatedPrice ?? 0,
-      sampleCount: result._count.id,
+    return {
+      minPrice,
+      avgPrice,
+      maxPrice,
+      sampleCount: 1,
     };
-
-    await this.redis.set(cacheKey, priceResult, 3600); // 1시간 캐시
-    return priceResult;
-  }
-
-  private getAreaBucket(areaSize: number): { min: number; max: number } {
-    if (areaSize <= 15) return { min: 1, max: 15 };
-    if (areaSize <= 25) return { min: 16, max: 25 };
-    if (areaSize <= 35) return { min: 26, max: 35 };
-    if (areaSize <= 50) return { min: 36, max: 50 };
-    return { min: 51, max: 99999 };
   }
 
   /** 업체가 제출한 견적 목록 (COMPANY) */

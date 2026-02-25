@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { SubscriptionGuard } from '../auth/guards/subscription.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { RequireSubscription } from '../../common/decorators/subscription.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CreateEstimateRequestDto } from './dto/create-estimate-request.dto';
@@ -39,18 +40,18 @@ export class EstimateController {
   // ─── 정적 라우트 (동적 :id 보다 먼저 선언해야 함) ───
 
   @Get('price-estimate')
-  @UseGuards()
+  @Public()
   @ApiOperation({ summary: '예상 가격 범위 조회 (공개)' })
   @ApiResponse({ status: 200, description: '예상 가격 범위 조회 성공' })
   async getPriceEstimate(
     @Query('cleaningType') cleaningType: string,
     @Query('areaSize') areaSize?: number,
-    @Query('address') address?: string,
+    @Query('serviceTier') serviceTier?: string,
   ) {
     return this.estimateService.getPriceEstimate(
       cleaningType,
       areaSize ? Number(areaSize) : undefined,
-      address,
+      serviceTier,
     );
   }
 

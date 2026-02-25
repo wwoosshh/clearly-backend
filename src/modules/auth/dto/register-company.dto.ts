@@ -88,6 +88,15 @@ export class RegisterCompanyDto {
   specialties?: string[];
 
   @ApiPropertyOptional({
+    description: '서비스 티어',
+    example: ['CLEAN', 'DEEP_CLEAN'],
+  })
+  @IsArray({ message: '서비스 티어는 배열이어야 합니다.' })
+  @IsString({ each: true, message: '서비스 티어 항목은 문자열이어야 합니다.' })
+  @IsOptional()
+  serviceTiers?: string[];
+
+  @ApiPropertyOptional({
     description: '서비스 가능 지역',
     example: ['서울 강남구', '서울 서초구'],
   })

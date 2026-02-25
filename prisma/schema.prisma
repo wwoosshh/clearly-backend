@@ -157,6 +157,12 @@ enum CancelledBy {
   COMPANY
 }
 
+enum ServiceTier {
+  CLEAN
+  DEEP_CLEAN
+  PREMIUM_CLEAN
+}
+
 enum PipelineStage {
   LEAD
   CONSULTING
@@ -241,6 +247,7 @@ model Company {
   minPrice           Int?               @map("min_price")
   maxPrice           Int?               @map("max_price")
   specialties        Json?
+  serviceTiers       Json?              @map("service_tiers")
   verificationStatus VerificationStatus @default(PENDING) @map("verification_status")
   rejectionReason    String?            @map("rejection_reason") @db.Text
   averageRating      Decimal            @default(0.0) @map("average_rating") @db.Decimal(3, 2)
@@ -515,6 +522,7 @@ model EstimateRequest {
   desiredDate   DateTime?             @map("desired_date") @db.Date
   desiredTime   String?               @map("desired_time") @db.VarChar(50)
   message       String                @db.Text
+  serviceTier   ServiceTier?          @map("service_tier")
   budget        Int?
   images        Json?
   checklist     Json?

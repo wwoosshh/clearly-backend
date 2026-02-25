@@ -71,6 +71,12 @@ export class UpdateCompanyDto {
   @IsString({ each: true })
   specialties?: string[];
 
+  @ApiPropertyOptional({ description: '서비스 티어', type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  serviceTiers?: string[];
+
   @ApiPropertyOptional({ description: '최소 가격' })
   @IsOptional()
   @IsInt()

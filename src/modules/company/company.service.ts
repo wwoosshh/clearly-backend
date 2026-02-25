@@ -51,6 +51,7 @@ interface RawCompanyRow {
   portfolio: unknown;
   contact_email: string | null;
   videos: unknown;
+  service_tiers: unknown;
   subscription_tier: string | null;
   priority_weight: string | null;
   user_id: string;
@@ -264,6 +265,7 @@ export class CompanyService {
       keyword,
       specialty,
       region,
+      serviceTier,
       sortBy = SortBy.SCORE,
       page = 1,
       limit = 10,
@@ -282,6 +284,14 @@ export class CompanyService {
         `EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(c.specialties, '[]'::jsonb)) AS s WHERE s ILIKE $${paramIdx})`,
       );
       params.push(`%${specialty}%`);
+      paramIdx++;
+    }
+
+    if (serviceTier) {
+      conditions.push(
+        `EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(c.service_tiers, '[]'::jsonb)) AS t WHERE t = $${paramIdx})`,
+      );
+      params.push(serviceTier);
       paramIdx++;
     }
 
@@ -346,7 +356,7 @@ export class CompanyService {
       SELECT
         c.id, c.business_name, c.business_number, c.representative,
         c.address, c.detail_address, c.description, c.profile_images,
-        c.specialties, c.service_areas, c.min_price, c.max_price,
+        c.specialties, c.service_tiers, c.service_areas, c.min_price, c.max_price,
         c.average_rating, c.total_reviews, c.total_matchings,
         c.response_time, c.identity_verified, c.experience_years,
         c.contact_hours, c.employee_count, c.approved_at,
@@ -410,6 +420,7 @@ export class CompanyService {
         description: row.description,
         profileImages: row.profile_images,
         specialties: row.specialties,
+        serviceTiers: row.service_tiers,
         serviceAreas: row.service_areas,
         minPrice: row.min_price,
         maxPrice: row.max_price,

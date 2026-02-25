@@ -11,7 +11,7 @@ import {
   Min,
   MaxLength,
 } from 'class-validator';
-import { CleaningType } from '@prisma/client';
+import { CleaningType, ServiceTier } from '@prisma/client';
 
 export class CreateEstimateRequestDto {
   @ApiProperty({ description: '청소 유형', enum: CleaningType })
@@ -56,6 +56,11 @@ export class CreateEstimateRequestDto {
   @IsString()
   @MaxLength(50)
   desiredTime?: string;
+
+  @ApiPropertyOptional({ description: '서비스 티어', enum: ServiceTier })
+  @IsOptional()
+  @IsEnum(ServiceTier, { message: '유효한 서비스 티어를 선택해주세요.' })
+  serviceTier?: ServiceTier;
 
   @ApiProperty({ description: '상세 설명' })
   @IsString()
