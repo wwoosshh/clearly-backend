@@ -47,9 +47,7 @@ enum CleaningType {
   OFFICE
   STORE
   AIRCON
-  CARPET
-  EXTERIOR
-  CONSULTATION
+  SPECIAL
 }
 
 enum MessageType {

@@ -94,26 +94,15 @@ export const CLEANING_CHECKLISTS: Record<string, ChecklistTemplate> = {
       { key: 'test', label: '작동 테스트', required: true },
     ],
   },
-  CARPET: {
-    cleaningType: 'CARPET',
-    label: '카펫 청소',
+  SPECIAL: {
+    cleaningType: 'SPECIAL',
+    label: '특수 청소',
     items: [
-      { key: 'vacuum', label: '진공 청소', required: true },
-      { key: 'stain', label: '얼룩 제거', required: true },
-      { key: 'wash', label: '스팀/샴푸 세척', required: true },
-      { key: 'dry', label: '건조 처리', required: true },
-      { key: 'deodorize', label: '탈취 처리', required: false },
-    ],
-  },
-  EXTERIOR: {
-    cleaningType: 'EXTERIOR',
-    label: '외부 청소',
-    items: [
-      { key: 'wall', label: '외벽 청소', required: true },
-      { key: 'window', label: '외부 창문 청소', required: true },
-      { key: 'parking', label: '주차장 청소', required: false },
-      { key: 'entrance', label: '건물 입구/로비 청소', required: true },
-      { key: 'roof', label: '옥상/지붕 청소', required: false },
+      { key: 'assessment', label: '현장 상태 확인', required: true },
+      { key: 'protection', label: '주변 보호 작업', required: true },
+      { key: 'cleaning', label: '특수 장비 청소', required: true },
+      { key: 'sanitize', label: '살균/소독 처리', required: false },
+      { key: 'inspection', label: '최종 점검', required: true },
     ],
   },
 };

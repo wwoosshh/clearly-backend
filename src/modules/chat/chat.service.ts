@@ -78,7 +78,7 @@ export class ChatService {
         data: {
           userId,
           companyId,
-          cleaningType: 'CONSULTATION',
+          cleaningType: 'SPECIAL',
           address: '직접 채팅 상담',
           status: 'ACCEPTED',
         },
@@ -483,8 +483,8 @@ export class ChatService {
       completedAt: new Date(),
     };
 
-    // 직접 채팅 상담(CONSULTATION) 매칭인 경우 실제 거래 정보로 업데이트
-    if (room.matching.cleaningType === 'CONSULTATION' && details) {
+    // 직접 채팅 상담 매칭인 경우 실제 거래 정보로 업데이트
+    if (room.matching.address === '직접 채팅 상담' && details) {
       if (details.cleaningType) {
         updateData.cleaningType = details.cleaningType;
       }
