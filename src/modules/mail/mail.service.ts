@@ -10,10 +10,11 @@ export class MailService {
 
   constructor(private readonly configService: ConfigService) {
     this.resend = new Resend(this.configService.get('RESEND_API_KEY', ''));
-    this.from = this.configService.get(
+    const fromEmail = this.configService.get(
       'RESEND_FROM',
-      '바른오더 <onboarding@resend.dev>',
+      'onboarding@resend.dev',
     );
+    this.from = `바른오더 <${fromEmail}>`;
     this.logger.log(`메일 발신 주소: ${this.from}`);
   }
 
