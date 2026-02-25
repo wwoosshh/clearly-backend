@@ -14,6 +14,7 @@ export class MailService {
       'RESEND_FROM',
       '바른오더 <onboarding@resend.dev>',
     );
+    this.logger.log(`메일 발신 주소: ${this.from}`);
   }
 
   async sendVerificationEmail(to: string, token: string): Promise<void> {
