@@ -10,6 +10,7 @@ import { GeocodingService } from '../geocoding/geocoding.service';
 import { RedisService } from '../../common/cache/redis.service';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { SearchCompanyDto, SortBy } from './dto/search-company.dto';
+import { CACHE_TTL } from '../../common/cache/cache.constants';
 
 interface CompanyWithScore {
   id: string;
@@ -109,7 +110,7 @@ export class CompanyService {
       subscriptionTier: subscriptions[0]?.plan?.tier ?? null,
     };
 
-    await this.redis.set(cacheKey, result, 600); // 10분 캐시
+    await this.redis.set(cacheKey, result, CACHE_TTL.COMPANY_DETAIL);
     return result;
   }
 
@@ -138,7 +139,7 @@ export class CompanyService {
       throw new NotFoundException('등록된 업체 정보가 없습니다.');
     }
 
-    await this.redis.set(cacheKey, company, 300); // 5분 캐시
+    await this.redis.set(cacheKey, company, CACHE_TTL.COMPANY_PROFILE);
     return company;
   }
 

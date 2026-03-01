@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, Faq } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../common/cache/redis.service';
+import { CACHE_TTL } from '../../common/cache/cache.constants';
 import { CreateFaqDto } from './dto/create-faq.dto';
 import { UpdateFaqDto } from './dto/update-faq.dto';
 
@@ -42,7 +43,7 @@ export class FaqService {
       grouped[faq.category].push(faq);
     }
 
-    await this.redis.set(cacheKey, grouped, 7200); // 2시간 캐시
+    await this.redis.set(cacheKey, grouped, CACHE_TTL.FAQ_LIST);
     return grouped;
   }
 

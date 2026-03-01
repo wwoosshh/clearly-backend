@@ -24,6 +24,7 @@ import { GoogleLoginDto } from './dto/google-login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RedisService } from '../../common/cache/redis.service';
+import { CACHE_TTL } from '../../common/cache/cache.constants';
 
 @Injectable()
 export class AuthService {
@@ -361,7 +362,7 @@ export class AuthService {
       throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
     }
 
-    await this.redis.set(cacheKey, user, 300); // 5분 캐시
+    await this.redis.set(cacheKey, user, CACHE_TTL.USER_PROFILE);
     return user;
   }
 
@@ -788,7 +789,7 @@ export class AuthService {
     await this.redis.set(
       `oauth:code:${code}`,
       { tokens, isNewUser },
-      60,
+      CACHE_TTL.OAUTH_TEMP_CODE,
     );
     return code;
   }
@@ -816,7 +817,7 @@ export class AuthService {
         const clientId = this.configService.get('NAVER_CLIENT_ID');
         const state = crypto.randomBytes(16).toString('hex');
         // CSRF 방지: state를 Redis에 5분간 저장
-        await this.redis.set(`oauth:state:${state}`, '1', 300);
+        await this.redis.set(`oauth:state:${state}`, '1', CACHE_TTL.OAUTH_STATE);
         return `https://nid.naver.com/oauth2.0/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&state=${state}`;
       }
       case 'google': {

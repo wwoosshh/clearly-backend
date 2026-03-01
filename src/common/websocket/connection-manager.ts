@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Server } from 'socket.io';
 import { RedisService } from '../cache/redis.service';
+import { CACHE_TTL } from '../cache/cache.constants';
 
 const MAX_CONNECTIONS_PER_USER = 5;
-const SOCKET_TTL = 3600; // 1시간
+const SOCKET_TTL = CACHE_TTL.SOCKET_SESSION;
 
 @Injectable()
 export class ConnectionManager {

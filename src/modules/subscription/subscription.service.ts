@@ -14,6 +14,7 @@ import {
   GroupedPlans,
 } from './types/subscription.types';
 import { NOTIFICATION_EVENTS, NotificationEvent } from '../notification/notification.events';
+import { CACHE_TTL } from '../../common/cache/cache.constants';
 
 type SubscriptionWithPlan = CompanySubscription & { plan: SubscriptionPlan };
 
@@ -352,7 +353,7 @@ export class SubscriptionService {
       cancelledAt: subscription.cancelledAt,
     };
 
-    await this.redis.set(cacheKey, info, 300);
+    await this.redis.set(cacheKey, info, CACHE_TTL.SUBSCRIPTION_INFO);
     return info;
   }
 

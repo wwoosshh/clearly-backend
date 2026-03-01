@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Banner } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../common/cache/redis.service';
+import { CACHE_TTL } from '../../common/cache/cache.constants';
 import { CreateBannerDto } from './dto/create-banner.dto';
 import { UpdateBannerDto } from './dto/update-banner.dto';
 
@@ -24,7 +25,7 @@ export class BannerService {
       orderBy: { sortOrder: 'asc' },
     });
 
-    await this.redis.set(cacheKey, banners, 3600); // 1시간 캐시
+    await this.redis.set(cacheKey, banners, CACHE_TTL.BANNER_LIST);
     return banners;
   }
 

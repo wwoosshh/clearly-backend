@@ -9,6 +9,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../common/cache/redis.service';
+import { CACHE_TTL } from '../../common/cache/cache.constants';
 import { CreateReviewDto } from './dto/create-review.dto';
 import {
   NOTIFICATION_EVENTS,
@@ -173,7 +174,7 @@ export class ReviewService {
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
 
-    await this.redis.set(cacheKey, result, 600); // 10분 캐시
+    await this.redis.set(cacheKey, result, CACHE_TTL.REVIEW_LIST);
     return result;
   }
 
@@ -384,7 +385,7 @@ export class ReviewService {
     });
 
     // 투표 기록 저장 (30일 TTL)
-    await this.redis.set(voteKey, '1', 60 * 60 * 24 * 30);
+    await this.redis.set(voteKey, '1', CACHE_TTL.REVIEW_VOTE);
     await this.redis.delPattern(`review:company:${review.companyId}:*`);
     return updated;
   }

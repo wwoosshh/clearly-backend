@@ -4,6 +4,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { RedisService } from '../../../common/cache/redis.service';
+import { CACHE_TTL } from '../../../common/cache/cache.constants';
 
 export interface JwtPayload {
   sub: string;
@@ -54,7 +55,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     }
 
     // 60초 캐싱
-    await this.redis.set(cacheKey, { id: user.id, role: user.role, isActive: user.isActive }, 60);
+    await this.redis.set(cacheKey, { id: user.id, role: user.role, isActive: user.isActive }, CACHE_TTL.JWT_USER);
 
     return { id: user.id, email: payload.email, role: user.role };
   }

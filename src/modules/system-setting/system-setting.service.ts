@@ -1,9 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../common/cache/redis.service';
+import { CACHE_TTL } from '../../common/cache/cache.constants';
 
 const SETTINGS_CACHE_KEY = 'system:settings';
-const SETTINGS_TTL = 600; // 10분
+const SETTINGS_TTL = CACHE_TTL.SYSTEM_SETTINGS;
 
 const DEFAULT_SETTINGS: Record<string, { value: any; description: string }> = {
   max_concurrent_requests: { value: 3, description: '동시 견적요청 제한' },

@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationGateway } from './notification.gateway';
 import { FcmService } from './fcm.service';
 import { RedisService } from '../../common/cache/redis.service';
+import { CACHE_TTL } from '../../common/cache/cache.constants';
 import {
   NOTIFICATION_EVENTS,
   NotificationEvent,
@@ -94,7 +95,7 @@ export class NotificationService {
       unreadCount,
     };
 
-    await this.redis.set(cacheKey, result, 60);
+    await this.redis.set(cacheKey, result, CACHE_TTL.NOTIFICATION_LIST);
     return result;
   }
 
@@ -107,7 +108,7 @@ export class NotificationService {
       where: { userId, isRead: false },
     });
 
-    await this.redis.set(cacheKey, count, 30);
+    await this.redis.set(cacheKey, count, CACHE_TTL.NOTIFICATION_COUNT);
     return count;
   }
 

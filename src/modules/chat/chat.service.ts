@@ -8,6 +8,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../common/cache/redis.service';
+import { CACHE_TTL } from '../../common/cache/cache.constants';
 import {
   NOTIFICATION_EVENTS,
   NotificationEvent,
@@ -405,7 +406,7 @@ export class ChatService {
       unreadCount: unreadMap.get(room.id) ?? 0,
     }));
 
-    await this.redis.set(cacheKey, result, 30); // 30초 캐시
+    await this.redis.set(cacheKey, result, CACHE_TTL.CHAT_ROOM);
     return result;
   }
 
