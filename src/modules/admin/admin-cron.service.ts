@@ -350,4 +350,29 @@ export class AdminCronService {
     await this.companyMetricsService.updateAllCompanyMetrics();
   }
 
+  /**
+   * 30일 이상 지난 읽은 알림 자동 삭제
+   * 매일 새벽 5시 실행
+   */
+  @Cron('0 5 * * *')
+  async handleNotificationArchiving() {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    try {
+      const { count } = await this.prisma.notification.deleteMany({
+        where: {
+          isRead: true,
+          createdAt: { lt: thirtyDaysAgo },
+        },
+      });
+
+      if (count > 0) {
+        this.logger.log(`알림 아카이빙 완료: ${count}건 삭제`);
+      }
+    } catch (error) {
+      this.logger.error(`알림 아카이빙 실패: ${error}`);
+    }
+  }
+
 }
