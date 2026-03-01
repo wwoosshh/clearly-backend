@@ -576,12 +576,44 @@ export class SubscriptionService {
     };
   }
 
+  /** 견적 제출 카운터 감소 (롤백용) */
+  async decrementEstimateCount(companyId: string): Promise<void> {
+    const today = this.getKSTDateString();
+    const redisKey = `estimate:daily:${companyId}:${today}`;
+    await this.redis.decr(redisKey);
+  }
+
   /** 견적 제출 카운터 증가 (원자적 INCR) */
   async incrementEstimateCount(companyId: string): Promise<void> {
     const today = this.getKSTDateString();
     const redisKey = `estimate:daily:${companyId}:${today}`;
     const ttl = this.getSecondsUntilKSTMidnight();
     await this.redis.incr(redisKey, ttl);
+  }
+
+  /**
+   * 견적 제출 원자적 한도 확인 + 증가
+   * INCR 먼저 → 초과 시 DECR 롤백 → 한도 내일 때만 true 반환
+   */
+  async tryIncrementEstimateCount(companyId: string): Promise<{ allowed: boolean; used: number; limit: number }> {
+    const subscription = await this.getActiveSubscription(companyId);
+    if (!subscription) {
+      return { allowed: false, used: 0, limit: 0 };
+    }
+
+    const limit = subscription.dailyEstimateLimit;
+    const today = this.getKSTDateString();
+    const redisKey = `estimate:daily:${companyId}:${today}`;
+    const ttl = this.getSecondsUntilKSTMidnight();
+
+    const newCount = await this.redis.incr(redisKey, ttl);
+
+    if (newCount > limit) {
+      await this.redis.decr(redisKey);
+      return { allowed: false, used: limit, limit };
+    }
+
+    return { allowed: true, used: newCount, limit };
   }
 
   /** 만료 구독 처리 + 자동 재개/활성화 (cron용) */

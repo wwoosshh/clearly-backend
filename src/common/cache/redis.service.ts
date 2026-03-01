@@ -81,6 +81,15 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async decr(key: string): Promise<number> {
+    if (!this.isConnected()) return 0;
+    try {
+      return await this.client.decr(key);
+    } catch {
+      return 0;
+    }
+  }
+
   /** Set에 멤버 추가 (SADD) */
   async sadd(key: string, ...members: string[]): Promise<number> {
     if (!this.isConnected() || members.length === 0) return 0;

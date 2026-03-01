@@ -23,6 +23,7 @@ const CONTEXT = 'chat';
   cors: {
     origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
       const allowed = process.env.FRONTEND_URL?.split(',').map((u) => u.trim()) || [];
+      // origin이 없는 경우(모바일 앱, Postman 등 non-browser 클라이언트) 허용
       if (!origin || allowed.includes(origin)) {
         callback(null, true);
       } else {

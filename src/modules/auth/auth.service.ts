@@ -29,6 +29,11 @@ import { RedisService } from '../../common/cache/redis.service';
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
+  private maskEmail(email: string): string {
+    const [local, domain] = email.split('@');
+    return `${local.slice(0, 2)}***@${domain}`;
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -84,7 +89,7 @@ export class AuthService {
     this.mailService
       .sendVerificationEmail(email, verifyToken)
       .catch((err) =>
-        this.logger.error(`인증 이메일 발송 실패: ${email}`, err),
+        this.logger.error(`인증 이메일 발송 실패: ${this.maskEmail(email)}`, err),
       );
 
     const tokens = await this.generateTokens(user.id, user.email, user.role, {
@@ -310,7 +315,7 @@ export class AuthService {
     });
 
     if (!user || !user.passwordHash) {
-      this.logger.warn(`로그인 실패 - 존재하지 않는 이메일: ${email}`);
+      this.logger.warn(`로그인 실패 - 존재하지 않는 이메일: ${this.maskEmail(email)}`);
       throw new UnauthorizedException(
         '이메일 또는 비밀번호가 올바르지 않습니다.',
       );
@@ -320,7 +325,7 @@ export class AuthService {
 
     if (!isPasswordValid) {
       this.logger.warn(
-        `로그인 실패 - 비밀번호 불일치: userId=${user.id}, email=${email}`,
+        `로그인 실패 - 비밀번호 불일치: userId=${user.id}`,
       );
       throw new UnauthorizedException(
         '이메일 또는 비밀번호가 올바르지 않습니다.',
@@ -462,7 +467,7 @@ export class AuthService {
     // 캐시 무효화
     await this.redis.del(`user:profile:${user.id}`);
 
-    this.logger.log(`이메일 인증 완료: userId=${user.id}, email=${user.email}`);
+    this.logger.log(`이메일 인증 완료: userId=${user.id}`);
     return { message: '이메일 인증이 완료되었습니다.' };
   }
 

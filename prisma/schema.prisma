@@ -316,6 +316,7 @@ model Matching {
   completionReportedAt DateTime?   @map("completion_reported_at")
   estimateId         String?       @unique @map("estimate_id")
   completedAt        DateTime?     @map("completed_at")
+  deletedAt          DateTime?     @map("deleted_at")
   createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt          DateTime      @updatedAt @map("updated_at")
 
@@ -329,6 +330,7 @@ model Matching {
   @@index([companyId, status])
   @@index([status])
   @@index([createdAt(sort: Desc)])
+  @@index([deletedAt])
   @@map("matchings")
 }
 
@@ -395,6 +397,7 @@ model Review {
   companyRepliedAt DateTime? @map("company_replied_at")
   helpfulCount    Int      @default(0) @map("helpful_count")
   isVisible       Boolean  @default(true) @map("is_visible")
+  deletedAt       DateTime? @map("deleted_at")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -404,6 +407,7 @@ model Review {
 
   @@index([companyId, createdAt(sort: Desc)])
   @@index([companyId, isVisible])
+  @@index([deletedAt])
   @@map("reviews")
 }
 
@@ -461,11 +465,15 @@ model Payment {
   paymentKey     String?       @map("payment_key") @db.VarChar(200)
   receiptUrl     String?       @map("receipt_url") @db.VarChar(500)
   paidAt         DateTime?     @map("paid_at")
+  deletedAt      DateTime?     @map("deleted_at")
   createdAt      DateTime      @default(now()) @map("created_at")
 
   subscription CompanySubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
   @@index([subscriptionId])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([paymentMethod, createdAt(sort: Desc)])
+  @@index([deletedAt])
   @@map("payments")
 }
 

@@ -42,7 +42,7 @@ export class EstimateService {
         status: 'OPEN',
       },
     });
-    const maxConcurrent = this.settings.get('max_concurrent_requests', 3);
+    const maxConcurrent = Number(this.settings.get('max_concurrent_requests', 3));
     if (activeRequestCount >= maxConcurrent) {
       throw new BadRequestException(
         `동시에 최대 ${maxConcurrent}건의 견적요청만 가능합니다. 기존 요청이 마감된 후 다시 시도해주세요.`,
@@ -331,16 +331,14 @@ export class EstimateService {
       );
     }
 
-    // 일일 견적 한도 확인
-    const limitInfo = await this.subscriptionService.canSubmitEstimate(
-      company.id,
-    );
+    // 일일 견적 한도 확인 + 원자적 증가 (Race Condition 방지)
+    const limitInfo = await this.subscriptionService.tryIncrementEstimateCount(company.id);
     if (limitInfo.limit === 0) {
       throw new BadRequestException(
         '구독이 필요합니다. 가입비를 결제해주세요.',
       );
     }
-    if (limitInfo.remaining <= 0) {
+    if (!limitInfo.allowed) {
       throw new BadRequestException(
         `오늘의 견적 제출 한도(${limitInfo.limit}건)를 초과했습니다.`,
       );
@@ -371,14 +369,13 @@ export class EstimateService {
         },
       });
     } catch (err: unknown) {
+      // DB 생성 실패 시 증가한 카운터 롤백
+      await this.subscriptionService.decrementEstimateCount(company.id);
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new BadRequestException('이미 견적을 제출하셨습니다.');
       }
       throw err;
     }
-
-    // 일일 카운터 증가
-    await this.subscriptionService.incrementEstimateCount(company.id);
 
     this.logger.log(
       `견적 제출: id=${estimate.id}, companyId=${company.id}, requestId=${estimateRequestId}`,
