@@ -115,17 +115,17 @@ export class ChatService {
         data: { totalMatchings: { increment: 1 } },
       });
 
-      return { matching, chatRoom };
-    });
+      // 4. 시스템 메시지 생성 (트랜잭션 내부에서 처리)
+      await tx.chatMessage.create({
+        data: {
+          roomId: chatRoom.id,
+          senderId: userId,
+          content: '채팅 상담이 시작되었습니다.',
+          messageType: 'SYSTEM',
+        },
+      });
 
-    // 4. 시스템 메시지 생성 (트랜잭션 밖에서 처리)
-    await this.prisma.chatMessage.create({
-      data: {
-        roomId: result.chatRoom.id,
-        senderId: userId,
-        content: '채팅 상담이 시작되었습니다.',
-        messageType: 'SYSTEM',
-      },
+      return { matching, chatRoom };
     });
 
     this.logger.log(

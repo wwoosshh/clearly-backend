@@ -266,9 +266,9 @@ export class AuthService {
         secret: this.configService.getOrThrow('JWT_REFRESH_SECRET'),
       });
 
-      // DB에서 토큰 + 유저를 단일 쿼리로 조회
+      // DB에서 토큰 + 유저를 단일 쿼리로 조회 (해시 비교)
       const storedToken = await this.prisma.refreshToken.findUnique({
-        where: { token: refreshToken },
+        where: { token: this.hashToken(refreshToken) },
         include: {
           user: {
             include: { company: { select: { id: true } } },
@@ -758,19 +758,23 @@ export class AuthService {
       }),
     ]);
 
-    // RefreshToken을 DB에 저장
+    // RefreshToken을 DB에 저장 (SHA-256 해시)
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
     await this.prisma.refreshToken.create({
       data: {
         userId,
-        token: refreshToken,
+        token: this.hashToken(refreshToken),
         expiresAt,
       },
     });
 
     return { accessToken, refreshToken };
+  }
+
+  private hashToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
   }
 
   /** OAuth 임시 코드 생성 (60초 TTL) */

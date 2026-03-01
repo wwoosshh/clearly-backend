@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { ResolveReportDto, ReportActionType } from './dto/resolve-report.dto';
 import { SystemSettingService } from '../system-setting/system-setting.service';
+import { RedisService } from '../../common/cache/redis.service';
 
 interface UserFilters { search?: string; role?: string; isActive?: string; }
 interface ChatRoomFilters { search?: string; isActive?: string; refundStatus?: string; }
@@ -27,6 +28,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly subscriptionService: SubscriptionService,
     private readonly settings: SystemSettingService,
+    private readonly redis: RedisService,
   ) {}
 
   // ─── 대시보드 ───────────────────────────────────────────
@@ -246,7 +248,7 @@ export class AdminService {
 
     const newIsActive = !user.isActive;
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updateData: Prisma.UserUpdateInput = { isActive: newIsActive };
       if (newIsActive) {
         updateData.deactivatedAt = null;
@@ -266,6 +268,11 @@ export class AdminService {
 
       return updatedUser;
     });
+
+    // JWT 캐시 무효화 (비활성화 시 즉시 적용)
+    await this.redis.del(`jwt:user:${userId}`);
+
+    return result;
   }
 
   // ─── 업체 관리 ──────────────────────────────────────────
@@ -452,8 +459,8 @@ export class AdminService {
       throw new NotFoundException('업체를 찾을 수 없습니다.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updatedCompany = await tx.company.update({
+    const updatedCompany = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.company.update({
         where: { id: companyId },
         data: {
           verificationStatus: 'SUSPENDED',
@@ -467,8 +474,13 @@ export class AdminService {
         data: { isActive: false },
       });
 
-      return updatedCompany;
+      return result;
     });
+
+    // JWT 캐시 무효화
+    await this.redis.del(`jwt:user:${company.userId}`);
+
+    return updatedCompany;
   }
 
   async reactivateCompany(companyId: string) {
@@ -801,6 +813,7 @@ export class AdminService {
               where: { id: report.targetId },
               data: { isActive: false },
             });
+            await this.redis.del(`jwt:user:${report.targetId}`);
           }
           break;
         case ReportActionType.SUSPEND_COMPANY:
@@ -823,6 +836,7 @@ export class AdminService {
                   data: { isActive: false },
                 });
               });
+              await this.redis.del(`jwt:user:${company.userId}`);
             }
           }
           break;
