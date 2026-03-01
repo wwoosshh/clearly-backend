@@ -10,6 +10,7 @@ import {
   WsException,
 } from '@nestjs/websockets';
 import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -160,6 +161,11 @@ export class ChatGateway
         error instanceof Error ? error.message : '메시지 전송에 실패했습니다.',
       );
     }
+  }
+
+  @OnEvent('chat.messageRead')
+  handleMessageReadEvent(data: { roomId: string; readBy: string; count: number }) {
+    this.server.to(data.roomId).emit('messageRead', data);
   }
 
   @SubscribeMessage('markRead')

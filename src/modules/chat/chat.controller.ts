@@ -15,9 +15,9 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { ChatService } from './chat.service';
-import { ChatGateway } from './chat.gateway';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { MessageType } from '@prisma/client';
 
 @ApiTags('채팅')
@@ -27,7 +27,7 @@ import type { MessageType } from '@prisma/client';
 export class ChatController {
   constructor(
     private readonly chatService: ChatService,
-    private readonly chatGateway: ChatGateway,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   @Post('rooms')
@@ -95,13 +95,9 @@ export class ChatController {
   ) {
     const result = await this.chatService.markAsRead(roomId, userId);
 
-    // REST 호출 시에도 WebSocket으로 읽음 알림 전송
+    // REST 호출 시에도 WebSocket으로 읽음 알림 전송 (EventEmitter를 통한 느슨한 결합)
     if (result.count > 0) {
-      this.chatGateway.server.to(roomId).emit('messageRead', {
-        roomId,
-        readBy: userId,
-        count: result.count,
-      });
+      this.eventEmitter.emit('chat.messageRead', { roomId, readBy: userId, count: result.count });
     }
 
     return result;
