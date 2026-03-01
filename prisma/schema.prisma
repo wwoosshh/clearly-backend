@@ -506,6 +506,8 @@ model Report {
   adminNote   String?          @map("admin_note") @db.Text
   createdAt   DateTime         @default(now()) @map("created_at")
   resolvedAt  DateTime?        @map("resolved_at")
+  reviewedAt  DateTime?        @map("reviewed_at")
+  reviewedBy  String?          @map("reviewed_by") @db.VarChar(36)
 
   reporter User @relation("ReporterReports", fields: [reporterId], references: [id], onDelete: Cascade)
 

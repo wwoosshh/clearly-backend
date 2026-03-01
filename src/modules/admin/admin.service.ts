@@ -786,7 +786,7 @@ export class AdminService {
     };
   }
 
-  async resolveReport(reportId: string, dto: ResolveReportDto) {
+  async resolveReport(reportId: string, dto: ResolveReportDto, adminId: string) {
     const report = await this.prisma.report.findUnique({
       where: { id: reportId },
     });
@@ -795,12 +795,15 @@ export class AdminService {
       throw new NotFoundException('신고를 찾을 수 없습니다.');
     }
 
+    const now = new Date();
     const updatedReport = await this.prisma.report.update({
       where: { id: reportId },
       data: {
         status: dto.status,
         adminNote: dto.adminNote,
-        resolvedAt: new Date(),
+        resolvedAt: now,
+        reviewedAt: now,
+        reviewedBy: adminId,
       },
     });
 

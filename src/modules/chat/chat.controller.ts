@@ -18,6 +18,7 @@ import { ChatService } from './chat.service';
 import { ChatGateway } from './chat.gateway';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { MessageType } from '@prisma/client';
 
 @ApiTags('채팅')
 @Controller('chat')
@@ -74,13 +75,13 @@ export class ChatController {
   async sendMessage(
     @Param('id') roomId: string,
     @CurrentUser('id') userId: string,
-    @Body() body: { content: string; messageType?: string; fileUrl?: string },
+    @Body() body: { content: string; messageType?: MessageType; fileUrl?: string },
   ) {
     return this.chatService.sendMessage(
       roomId,
       userId,
       body.content,
-      (body.messageType as any) || 'TEXT',
+      body.messageType || 'TEXT',
       body.fileUrl,
     );
   }

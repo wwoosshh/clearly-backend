@@ -22,6 +22,7 @@ import { ResolveReportDto } from './dto/resolve-report.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 interface UserFilters { search?: string; role?: string; isActive?: string; }
 interface ChatRoomFilters { search?: string; isActive?: string; refundStatus?: string; }
@@ -192,8 +193,9 @@ export class AdminController {
   async resolveReport(
     @Param('reportId') reportId: string,
     @Body() resolveReportDto: ResolveReportDto,
+    @CurrentUser('id') adminId: string,
   ) {
-    return this.adminService.resolveReport(reportId, resolveReportDto);
+    return this.adminService.resolveReport(reportId, resolveReportDto, adminId);
   }
 
   // ─── 리뷰 관리 ──────────────────────────────────────────
