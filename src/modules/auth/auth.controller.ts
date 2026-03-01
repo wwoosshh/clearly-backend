@@ -202,14 +202,11 @@ export class AuthController {
         callbackUrl,
         state,
       );
-      const params = new URLSearchParams({
-        accessToken: result.tokens.accessToken,
-        refreshToken: result.tokens.refreshToken,
-      });
-      if (result.isNewUser) {
-        params.set('isNewUser', 'true');
-      }
-      return res.redirect(`${frontendUrl}/auth/callback?${params.toString()}`);
+      const tempCode = await this.authService.createOAuthTempCode(
+        result.tokens,
+        result.isNewUser ?? false,
+      );
+      return res.redirect(`${frontendUrl}/auth/callback?code=${tempCode}`);
     } catch (err: unknown) {
       // 사용자 친화적 메시지만 전달 (내부 에러 메시지 노출 방지)
       let userMessage = '소셜 로그인에 실패했습니다.';
@@ -219,6 +216,14 @@ export class AuthController {
       }
       return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(userMessage)}`);
     }
+  }
+
+  @Post('oauth/exchange')
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'OAuth 임시 코드를 토큰으로 교환' })
+  async exchangeOAuthCode(@Body('code') code: string) {
+    return this.authService.exchangeOAuthCode(code);
   }
 
   @Get('me')

@@ -773,6 +773,29 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
+  /** OAuth 임시 코드 생성 (60초 TTL) */
+  async createOAuthTempCode(tokens: { accessToken: string; refreshToken: string }, isNewUser: boolean): Promise<string> {
+    const code = crypto.randomUUID();
+    await this.redis.set(
+      `oauth:code:${code}`,
+      { tokens, isNewUser },
+      60,
+    );
+    return code;
+  }
+
+  /** OAuth 임시 코드 교환 (1회 사용 후 즉시 삭제) */
+  async exchangeOAuthCode(code: string): Promise<{ tokens: { accessToken: string; refreshToken: string }; isNewUser: boolean }> {
+    const data = await this.redis.get<{ tokens: { accessToken: string; refreshToken: string }; isNewUser: boolean }>(
+      `oauth:code:${code}`,
+    );
+    if (!data) {
+      throw new UnauthorizedException('유효하지 않거나 만료된 인증 코드입니다.');
+    }
+    await this.redis.del(`oauth:code:${code}`);
+    return data;
+  }
+
   /** OAuth 인가 URL 생성 */
   async getOAuthUrl(provider: string, callbackUrl: string): Promise<string> {
     switch (provider) {
