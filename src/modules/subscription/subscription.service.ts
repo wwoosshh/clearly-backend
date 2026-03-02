@@ -8,6 +8,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../common/cache/redis.service';
 import { Prisma, SubscriptionTier, SubscriptionStatus, SubscriptionPlan, CompanySubscription } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import {
   ActiveSubscriptionInfo,
   EstimateLimitInfo,
@@ -28,6 +29,7 @@ export class SubscriptionService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   /** 활성 플랜 목록 조회 (tier별 그룹화) */
@@ -59,6 +61,7 @@ export class SubscriptionService {
   async createSubscription(
     companyId: string,
     planId: string,
+    adminId?: string,
   ): Promise<SubscriptionWithPlan> {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
@@ -83,28 +86,37 @@ export class SubscriptionService {
     });
 
     let result: SubscriptionWithPlan;
+    let auditAction: 'SUBSCRIPTION_CREATED' | 'SUBSCRIPTION_UPGRADED' | 'SUBSCRIPTION_DOWNGRADED' | 'SUBSCRIPTION_EXTENDED' = 'SUBSCRIPTION_CREATED';
 
     if (!activeSub) {
-      // ACTIVE 구독 없음 → 신규 생성
       result = await this.activateNewSubscription(companyId, plan, company.userId);
+      auditAction = 'SUBSCRIPTION_CREATED';
     } else {
       const currentTierPriority = TIER_PRIORITY[activeSub.plan.tier] ?? 0;
       const newTierPriority = TIER_PRIORITY[plan.tier] ?? 0;
 
       if (activeSub.plan.tier === plan.tier) {
-        // 같은 등급 → 기간 합산
         result = await this.extendExistingSubscription(activeSub, plan, company.userId);
+        auditAction = 'SUBSCRIPTION_EXTENDED';
       } else if (newTierPriority > currentTierPriority) {
-        // 상위 등급 → 업그레이드
         result = await this.upgradeSubscription(companyId, activeSub, plan, company.userId);
+        auditAction = 'SUBSCRIPTION_UPGRADED';
       } else {
-        // 하위 등급 → 다운그레이드
         result = await this.downgradeSubscription(companyId, activeSub, plan, company.userId);
+        auditAction = 'SUBSCRIPTION_DOWNGRADED';
       }
     }
 
     // 캐시 무효화
     await this.redis.del(`subscription:active:${companyId}`);
+
+    await this.auditLog.log({
+      adminId,
+      action: auditAction,
+      targetType: 'SUBSCRIPTION',
+      targetId: result.id,
+      newValue: { planId, planTier: plan.tier, planName: plan.name },
+    });
 
     return result;
   }
@@ -267,7 +279,7 @@ export class SubscriptionService {
   }
 
   /** 3개월 무료 Basic 구독 생성 (업체 승인 시 호출) */
-  async createFreeTrial(companyId: string): Promise<SubscriptionWithPlan | CompanySubscription | null> {
+  async createFreeTrial(companyId: string, adminId?: string): Promise<SubscriptionWithPlan | CompanySubscription | null> {
     const basicPlan = await this.prisma.subscriptionPlan.findFirst({
       where: { tier: 'BASIC', durationMonths: 3, isActive: true },
     });
@@ -315,6 +327,14 @@ export class SubscriptionService {
         ),
       );
     }
+
+    await this.auditLog.log({
+      adminId,
+      action: 'SUBSCRIPTION_FREE_TRIAL',
+      targetType: 'SUBSCRIPTION',
+      targetId: subscription.id,
+      newValue: { companyId, planName: basicPlan.name, isTrial: true },
+    });
 
     return subscription;
   }
@@ -484,7 +504,7 @@ export class SubscriptionService {
   }
 
   /** 관리자 구독 개별 취소 (subscriptionId 기반) */
-  async cancelSubscriptionById(subscriptionId: string) {
+  async cancelSubscriptionById(subscriptionId: string, adminId?: string) {
     const subscription = await this.prisma.companySubscription.findUnique({
       where: { id: subscriptionId },
       include: { plan: true },
@@ -496,27 +516,23 @@ export class SubscriptionService {
     const { companyId, status } = subscription;
 
     if (status === 'ACTIVE') {
-      // ACTIVE → CANCELLED + cancelledAt 설정, 후속 구독 재개/활성화
       await this.prisma.$transaction(async (tx) => {
         await tx.companySubscription.update({
           where: { id: subscriptionId },
           data: { status: 'CANCELLED', cancelledAt: new Date() },
         });
 
-        // PAUSED 재개 시도, 없으면 QUEUED 활성화
         const resumed = await this.resumeHighestPausedSubscription(tx, companyId);
         if (!resumed) {
           await this.activateHighestQueuedSubscription(tx, companyId);
         }
       });
     } else if (status === 'PAUSED') {
-      // PAUSED → EXPIRED + pausedAt null
       await this.prisma.companySubscription.update({
         where: { id: subscriptionId },
         data: { status: 'EXPIRED', pausedAt: null },
       });
     } else if (status === 'QUEUED') {
-      // QUEUED → EXPIRED
       await this.prisma.companySubscription.update({
         where: { id: subscriptionId },
         data: { status: 'EXPIRED' },
@@ -529,13 +545,23 @@ export class SubscriptionService {
 
     await this.redis.del(`subscription:active:${companyId}`);
 
+    await this.auditLog.log({
+      adminId,
+      action: 'SUBSCRIPTION_CANCELLED',
+      targetType: 'SUBSCRIPTION',
+      targetId: subscriptionId,
+      oldValue: { status },
+      newValue: { status: 'CANCELLED' },
+    });
+
     return { message: '구독이 관리자에 의해 취소되었습니다.' };
   }
 
   /** 관리자 구독 연장 */
-  async extendSubscription(subscriptionId: string, months: number) {
+  async extendSubscription(subscriptionId: string, months: number, adminId?: string) {
     const subscription = await this.prisma.companySubscription.findUnique({
       where: { id: subscriptionId },
+      include: { plan: true },
     });
     if (!subscription) {
       throw new NotFoundException('구독을 찾을 수 없습니다.');
@@ -554,6 +580,15 @@ export class SubscriptionService {
     });
 
     await this.redis.del(`subscription:active:${subscription.companyId}`);
+
+    await this.auditLog.log({
+      adminId,
+      action: 'SUBSCRIPTION_EXTENDED',
+      targetType: 'SUBSCRIPTION',
+      targetId: subscriptionId,
+      newValue: { months, newPeriodEnd: newEnd.toISOString() },
+    });
+
     return updated;
   }
 

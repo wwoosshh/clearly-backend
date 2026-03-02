@@ -25,6 +25,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RedisService } from '../../common/cache/redis.service';
 import { CACHE_TTL } from '../../common/cache/cache.constants';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class AuthService {
@@ -43,6 +44,7 @@ export class AuthService {
     private readonly geocodingService: GeocodingService,
     private readonly mailService: MailService,
     private readonly redis: RedisService,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -436,6 +438,12 @@ export class AuthService {
         where: { userId: user.id },
       }),
     ]);
+
+    await this.auditLog.log({
+      action: 'PASSWORD_RESET',
+      targetType: 'USER',
+      targetId: user.id,
+    });
 
     return { message: '비밀번호가 성공적으로 변경되었습니다.' };
   }

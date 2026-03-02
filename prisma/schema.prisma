@@ -695,3 +695,24 @@ model Banner {
   @@index([isVisible, sortOrder])
   @@map("banners")
 }
+
+// ==================
+// 감사 로그
+// ==================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  adminId    String?  @map("admin_id") @db.VarChar(36)
+  action     String   @db.VarChar(100)
+  targetType String   @map("target_type") @db.VarChar(50)
+  targetId   String   @map("target_id") @db.VarChar(36)
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([adminId, createdAt(sort: Desc)])
+  @@index([targetType, targetId])
+  @@index([action, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+}

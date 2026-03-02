@@ -9,6 +9,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { GeocodingModule } from '../geocoding/geocoding.module';
 import { MailModule } from '../mail/mail.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { MailModule } from '../mail/mail.module';
     HttpModule,
     GeocodingModule,
     MailModule,
+    AuditLogModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, JwtRefreshStrategy],

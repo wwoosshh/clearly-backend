@@ -72,8 +72,11 @@ export class AdminController {
   @Patch('users/:userId/toggle-active')
   @ApiOperation({ summary: '사용자 활성/비활성 토글' })
   @ApiResponse({ status: 200, description: '사용자 상태 변경 성공' })
-  async toggleUserActive(@Param('userId') userId: string) {
-    return this.adminService.toggleUserActive(userId);
+  async toggleUserActive(
+    @Param('userId') userId: string,
+    @CurrentUser('id') adminId: string,
+  ) {
+    return this.adminService.toggleUserActive(userId, adminId);
   }
 
   // ─── 업체 관리 ──────────────────────────────────────────
@@ -99,8 +102,11 @@ export class AdminController {
   @Patch('companies/:companyId/approve')
   @ApiOperation({ summary: '업체 승인' })
   @ApiResponse({ status: 200, description: '업체 승인 성공' })
-  async approveCompany(@Param('companyId') companyId: string) {
-    return this.adminService.approveCompany(companyId);
+  async approveCompany(
+    @Param('companyId') companyId: string,
+    @CurrentUser('id') adminId: string,
+  ) {
+    return this.adminService.approveCompany(companyId, adminId);
   }
 
   @Patch('companies/:companyId/reject')
@@ -109,10 +115,12 @@ export class AdminController {
   async rejectCompany(
     @Param('companyId') companyId: string,
     @Body() rejectCompanyDto: RejectCompanyDto,
+    @CurrentUser('id') adminId: string,
   ) {
     return this.adminService.rejectCompany(
       companyId,
       rejectCompanyDto.rejectionReason,
+      adminId,
     );
   }
 
@@ -122,18 +130,23 @@ export class AdminController {
   async suspendCompany(
     @Param('companyId') companyId: string,
     @Body() suspendCompanyDto: SuspendCompanyDto,
+    @CurrentUser('id') adminId: string,
   ) {
     return this.adminService.suspendCompany(
       companyId,
       suspendCompanyDto.reason,
+      adminId,
     );
   }
 
   @Patch('companies/:companyId/reactivate')
   @ApiOperation({ summary: '업체 정지 해제' })
   @ApiResponse({ status: 200, description: '업체 정지 해제 성공' })
-  async reactivateCompany(@Param('companyId') companyId: string) {
-    return this.adminService.reactivateCompany(companyId);
+  async reactivateCompany(
+    @Param('companyId') companyId: string,
+    @CurrentUser('id') adminId: string,
+  ) {
+    return this.adminService.reactivateCompany(companyId, adminId);
   }
 
   // ─── 채팅 모니터링 ─────────────────────────────────────
@@ -214,8 +227,11 @@ export class AdminController {
   @Patch('reviews/:reviewId/toggle-visibility')
   @ApiOperation({ summary: '리뷰 표시/숨김 토글' })
   @ApiResponse({ status: 200, description: '리뷰 상태 변경 성공' })
-  async toggleReviewVisibility(@Param('reviewId') reviewId: string) {
-    return this.adminService.toggleReviewVisibility(reviewId);
+  async toggleReviewVisibility(
+    @Param('reviewId') reviewId: string,
+    @CurrentUser('id') adminId: string,
+  ) {
+    return this.adminService.toggleReviewVisibility(reviewId, adminId);
   }
 
   // ─── 견적요청 모니터링 ──────────────────────────────────
@@ -270,11 +286,13 @@ export class AdminController {
   async changeCompanySubscription(
     @Param('companyId') companyId: string,
     @Body() body: { planId: string; isTrial?: boolean },
+    @CurrentUser('id') adminId: string,
   ) {
     return this.adminService.changeCompanySubscription(
       companyId,
       body.planId,
       body.isTrial,
+      adminId,
     );
   }
 
@@ -284,15 +302,19 @@ export class AdminController {
   async extendCompanySubscription(
     @Param('companyId') companyId: string,
     @Body() body: { months: number },
+    @CurrentUser('id') adminId: string,
   ) {
-    return this.adminService.extendCompanySubscription(companyId, body.months);
+    return this.adminService.extendCompanySubscription(companyId, body.months, adminId);
   }
 
   @Post('companies/:companyId/subscription/trial')
   @ApiOperation({ summary: '무료 체험 수동 부여' })
   @ApiResponse({ status: 200, description: '무료 체험 부여 성공' })
-  async grantFreeTrial(@Param('companyId') companyId: string) {
-    return this.adminService.grantFreeTrial(companyId);
+  async grantFreeTrial(
+    @Param('companyId') companyId: string,
+    @CurrentUser('id') adminId: string,
+  ) {
+    return this.adminService.grantFreeTrial(companyId, adminId);
   }
 
   @Delete('subscriptions/:subscriptionId')
@@ -300,8 +322,9 @@ export class AdminController {
   @ApiResponse({ status: 200, description: '구독 취소 성공' })
   async cancelSubscription(
     @Param('subscriptionId') subscriptionId: string,
+    @CurrentUser('id') adminId: string,
   ) {
-    return this.adminService.cancelCompanySubscription(subscriptionId);
+    return this.adminService.cancelCompanySubscription(subscriptionId, adminId);
   }
 
   @Get('subscription-plans')
@@ -319,6 +342,22 @@ export class AdminController {
     @Body() body: { price?: number; dailyEstimateLimit?: number; isActive?: boolean },
   ) {
     return this.adminService.updateSubscriptionPlan(planId, body);
+  }
+
+  // ─── 감사 로그 ─────────────────────────────────────────
+
+  @Get('audit-logs')
+  @ApiOperation({ summary: '감사 로그 조회' })
+  @ApiResponse({ status: 200, description: '감사 로그 조회 성공' })
+  async getAuditLogs(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+    @Query('adminId') adminId?: string,
+    @Query('action') action?: string,
+    @Query('targetType') targetType?: string,
+    @Query('targetId') targetId?: string,
+  ) {
+    return this.adminService.getAuditLogs(page, limit, { adminId, action, targetType, targetId });
   }
 
   // ─── 설정 ──────────────────────────────────────────────

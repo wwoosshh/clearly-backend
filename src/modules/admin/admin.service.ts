@@ -5,6 +5,7 @@ import { SubscriptionService } from '../subscription/subscription.service';
 import { ResolveReportDto, ReportActionType } from './dto/resolve-report.dto';
 import { SystemSettingService } from '../system-setting/system-setting.service';
 import { RedisService } from '../../common/cache/redis.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 interface UserFilters { search?: string; role?: string; isActive?: string; }
 interface ChatRoomFilters { search?: string; isActive?: string; refundStatus?: string; }
@@ -29,6 +30,7 @@ export class AdminService {
     private readonly subscriptionService: SubscriptionService,
     private readonly settings: SystemSettingService,
     private readonly redis: RedisService,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   // ─── 대시보드 ───────────────────────────────────────────
@@ -236,7 +238,7 @@ export class AdminService {
     };
   }
 
-  async toggleUserActive(userId: string) {
+  async toggleUserActive(userId: string, adminId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { company: true },
@@ -271,6 +273,14 @@ export class AdminService {
 
     // JWT 캐시 무효화 (비활성화 시 즉시 적용)
     await this.redis.del(`jwt:user:${userId}`);
+
+    await this.auditLog.log({
+      adminId,
+      action: newIsActive ? 'USER_ACTIVATED' : 'USER_DEACTIVATED',
+      targetType: 'USER',
+      targetId: userId,
+      newValue: { isActive: newIsActive },
+    });
 
     return result;
   }
@@ -393,7 +403,7 @@ export class AdminService {
     };
   }
 
-  async approveCompany(companyId: string) {
+  async approveCompany(companyId: string, adminId: string) {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
     });
@@ -421,7 +431,7 @@ export class AdminService {
 
     // 신규 업체 승인 시 3개월 무료 Basic 구독 생성 (트랜잭션 외부 - 실패해도 승인은 유지)
     try {
-      await this.subscriptionService.createFreeTrial(companyId);
+      await this.subscriptionService.createFreeTrial(companyId, adminId);
       this.logger.log(`무료 체험 구독 생성: companyId=${companyId}`);
     } catch (error) {
       this.logger.error(
@@ -429,10 +439,18 @@ export class AdminService {
       );
     }
 
+    await this.auditLog.log({
+      adminId,
+      action: 'COMPANY_APPROVED',
+      targetType: 'COMPANY',
+      targetId: companyId,
+      newValue: { verificationStatus: 'APPROVED' },
+    });
+
     return updatedCompany;
   }
 
-  async rejectCompany(companyId: string, rejectionReason: string) {
+  async rejectCompany(companyId: string, rejectionReason: string, adminId: string) {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
     });
@@ -441,16 +459,26 @@ export class AdminService {
       throw new NotFoundException('업체를 찾을 수 없습니다.');
     }
 
-    return this.prisma.company.update({
+    const updatedCompany = await this.prisma.company.update({
       where: { id: companyId },
       data: {
         verificationStatus: 'REJECTED',
         rejectionReason,
       },
     });
+
+    await this.auditLog.log({
+      adminId,
+      action: 'COMPANY_REJECTED',
+      targetType: 'COMPANY',
+      targetId: companyId,
+      newValue: { verificationStatus: 'REJECTED', rejectionReason },
+    });
+
+    return updatedCompany;
   }
 
-  async suspendCompany(companyId: string, reason: string) {
+  async suspendCompany(companyId: string, reason: string, adminId: string) {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
     });
@@ -480,10 +508,18 @@ export class AdminService {
     // JWT 캐시 무효화
     await this.redis.del(`jwt:user:${company.userId}`);
 
+    await this.auditLog.log({
+      adminId,
+      action: 'COMPANY_SUSPENDED',
+      targetType: 'COMPANY',
+      targetId: companyId,
+      newValue: { verificationStatus: 'SUSPENDED', reason },
+    });
+
     return updatedCompany;
   }
 
-  async reactivateCompany(companyId: string) {
+  async reactivateCompany(companyId: string, adminId: string) {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
     });
@@ -492,8 +528,8 @@ export class AdminService {
       throw new NotFoundException('업체를 찾을 수 없습니다.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updatedCompany = await tx.company.update({
+    const updatedCompany = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.company.update({
         where: { id: companyId },
         data: {
           verificationStatus: 'APPROVED',
@@ -507,8 +543,18 @@ export class AdminService {
         data: { isActive: true },
       });
 
-      return updatedCompany;
+      return result;
     });
+
+    await this.auditLog.log({
+      adminId,
+      action: 'COMPANY_REACTIVATED',
+      targetType: 'COMPANY',
+      targetId: companyId,
+      newValue: { verificationStatus: 'APPROVED', isActive: true },
+    });
+
+    return updatedCompany;
   }
 
   // ─── 채팅 모니터링 ─────────────────────────────────────
@@ -854,6 +900,15 @@ export class AdminService {
       }
     }
 
+    await this.auditLog.log({
+      adminId,
+      action: 'REPORT_RESOLVED',
+      targetType: 'REPORT',
+      targetId: reportId,
+      oldValue: { status: report.status },
+      newValue: { status: dto.status, actionType: dto.actionType ?? null },
+    });
+
     return updatedReport;
   }
 
@@ -898,7 +953,7 @@ export class AdminService {
     };
   }
 
-  async toggleReviewVisibility(reviewId: string) {
+  async toggleReviewVisibility(reviewId: string, adminId: string) {
     const review = await this.prisma.review.findUnique({
       where: { id: reviewId },
     });
@@ -907,10 +962,22 @@ export class AdminService {
       throw new NotFoundException('리뷰를 찾을 수 없습니다.');
     }
 
-    return this.prisma.review.update({
+    const newIsVisible = !review.isVisible;
+
+    const updatedReview = await this.prisma.review.update({
       where: { id: reviewId },
-      data: { isVisible: !review.isVisible },
+      data: { isVisible: newIsVisible },
     });
+
+    await this.auditLog.log({
+      adminId,
+      action: newIsVisible ? 'REVIEW_SHOWN' : 'REVIEW_HIDDEN',
+      targetType: 'REVIEW',
+      targetId: reviewId,
+      newValue: { isVisible: newIsVisible },
+    });
+
+    return updatedReview;
   }
 
   // ─── 견적요청 모니터링 ──────────────────────────────────
@@ -1085,11 +1152,12 @@ export class AdminService {
     companyId: string,
     planId: string,
     isTrial?: boolean,
+    adminId?: string,
   ) {
-    return this.subscriptionService.createSubscription(companyId, planId);
+    return this.subscriptionService.createSubscription(companyId, planId, adminId);
   }
 
-  async extendCompanySubscription(companyId: string, months: number) {
+  async extendCompanySubscription(companyId: string, months: number, adminId?: string) {
     const active = await this.prisma.companySubscription.findFirst({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { createdAt: 'desc' },
@@ -1097,15 +1165,15 @@ export class AdminService {
     if (!active) {
       throw new NotFoundException('활성 구독이 없습니다.');
     }
-    return this.subscriptionService.extendSubscription(active.id, months);
+    return this.subscriptionService.extendSubscription(active.id, months, adminId);
   }
 
-  async cancelCompanySubscription(subscriptionId: string) {
-    return this.subscriptionService.cancelSubscriptionById(subscriptionId);
+  async cancelCompanySubscription(subscriptionId: string, adminId?: string) {
+    return this.subscriptionService.cancelSubscriptionById(subscriptionId, adminId);
   }
 
-  async grantFreeTrial(companyId: string) {
-    return this.subscriptionService.createFreeTrial(companyId);
+  async grantFreeTrial(companyId: string, adminId?: string) {
+    return this.subscriptionService.createFreeTrial(companyId, adminId);
   }
 
   async getSubscriptionPlans() {
@@ -1122,6 +1190,37 @@ export class AdminService {
       where: { id: planId },
       data,
     });
+  }
+
+  // ─── 감사 로그 ─────────────────────────────────────────
+
+  async getAuditLogs(
+    page: number,
+    limit: number,
+    filters: { adminId?: string; action?: string; targetType?: string; targetId?: string },
+  ) {
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.AuditLogWhereInput = {};
+    if (filters.adminId) where.adminId = filters.adminId;
+    if (filters.action) where.action = filters.action;
+    if (filters.targetType) where.targetType = filters.targetType;
+    if (filters.targetId) where.targetId = filters.targetId;
+
+    const [data, total] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   // ─── 설정 ──────────────────────────────────────────────
