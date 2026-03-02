@@ -43,10 +43,14 @@ export class AuthController {
   ): void {
     const isProduction = process.env.NODE_ENV === 'production';
 
+    // 프론트(Vercel)와 백엔드(Railway)가 다른 도메인 → 크로스 사이트 XHR에서
+    // SameSite=Strict/Lax는 쿠키를 전송하지 않으므로 프로덕션에서 None;Secure 사용
+    const sameSite = isProduction ? 'none' : 'lax';
+
     res.cookie('accessToken', tokens.accessToken, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? 'strict' : 'lax',
+      sameSite,
       maxAge: 15 * 60 * 1000, // 15분
       path: '/',
     });
@@ -54,7 +58,7 @@ export class AuthController {
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? 'strict' : 'lax',
+      sameSite,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7일
       path: '/',
     });
@@ -67,7 +71,7 @@ export class AuthController {
       res.cookie('tokenExp', String(payload.exp), {
         httpOnly: false,
         secure: isProduction,
-        sameSite: isProduction ? 'strict' : 'lax',
+        sameSite,
         maxAge: 15 * 60 * 1000,
         path: '/',
       });
