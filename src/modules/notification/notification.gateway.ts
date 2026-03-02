@@ -61,9 +61,17 @@ export class NotificationGateway
 
   async handleConnection(client: Socket) {
     try {
+      // 1. auth.token (레거시 모바일) 2. Authorization 헤더 3. httpOnly 쿠키
+      const cookieToken = client.handshake.headers?.cookie
+        ?.split(';')
+        .map((c) => c.trim())
+        .find((c) => c.startsWith('accessToken='))
+        ?.split('=')[1];
+
       const token =
         client.handshake.auth?.token ||
-        client.handshake.headers?.authorization?.replace('Bearer ', '');
+        client.handshake.headers?.authorization?.replace('Bearer ', '') ||
+        cookieToken;
 
       if (!token) {
         this.logger.warn(`인증 토큰 없음: ${client.id}`);
