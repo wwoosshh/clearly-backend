@@ -10,6 +10,7 @@ import {
   Query,
   Req,
   Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -35,6 +36,43 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  private setAuthCookies(
+    res: Response,
+    tokens: { accessToken: string; refreshToken: string },
+  ): void {
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    res.cookie('accessToken', tokens.accessToken, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'strict' : 'lax',
+      maxAge: 15 * 60 * 1000, // 15분
+      path: '/',
+    });
+
+    res.cookie('refreshToken', tokens.refreshToken, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'strict' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7일
+      path: '/',
+    });
+
+    // tokenExp: JS에서 만료 시간 파악용 (토큰 값 아님)
+    try {
+      const payload = JSON.parse(
+        Buffer.from(tokens.accessToken.split('.')[1], 'base64').toString(),
+      );
+      res.cookie('tokenExp', String(payload.exp), {
+        httpOnly: false,
+        secure: isProduction,
+        sameSite: isProduction ? 'strict' : 'lax',
+        maxAge: 15 * 60 * 1000,
+        path: '/',
+      });
+    } catch {}
+  }
 
   @Post('register')
   @Throttle({ default: { ttl: 60000, limit: 5 } })
@@ -64,8 +102,13 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '로그인 성공' })
   @ApiResponse({ status: 401, description: '인증 실패' })
   @ApiResponse({ status: 403, description: '비활성화된 계정' })
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  async login(
+    @Body() loginDto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.login(loginDto);
+    this.setAuthCookies(res, result.tokens);
+    return { user: result.user };
   }
 
   @Post('kakao')
@@ -107,8 +150,17 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '로그아웃' })
   @ApiResponse({ status: 200, description: '로그아웃 성공' })
-  async logout(@CurrentUser('id') userId: string) {
-    return this.authService.logout(userId);
+  async logout(
+    @CurrentUser('id') userId: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const refreshToken = (req as any).cookies?.['refreshToken'];
+    await this.authService.logout(userId, refreshToken);
+    res.clearCookie('accessToken', { path: '/' });
+    res.clearCookie('refreshToken', { path: '/' });
+    res.clearCookie('tokenExp', { path: '/' });
+    return { message: '로그아웃되었습니다.' };
   }
 
   @Post('refresh')
@@ -117,8 +169,20 @@ export class AuthController {
   @ApiOperation({ summary: '토큰 갱신' })
   @ApiResponse({ status: 200, description: '토큰 갱신 성공' })
   @ApiResponse({ status: 401, description: '유효하지 않은 리프레시 토큰' })
-  async refresh(@Body('refreshToken') refreshToken: string) {
-    return this.authService.refreshToken(refreshToken);
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    // 쿠키 우선, body 폴백 (과도기 호환)
+    const refreshToken =
+      (req as any).cookies?.['refreshToken'] ||
+      (req as any).body?.refreshToken;
+    if (!refreshToken) {
+      throw new UnauthorizedException('리프레시 토큰이 없습니다.');
+    }
+    const tokens = await this.authService.refreshToken(refreshToken);
+    this.setAuthCookies(res, tokens);
+    return { message: '토큰이 갱신되었습니다.' };
   }
 
   @Post('forgot-password')
@@ -222,8 +286,13 @@ export class AuthController {
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'OAuth 임시 코드를 토큰으로 교환' })
-  async exchangeOAuthCode(@Body('code') code: string) {
-    return this.authService.exchangeOAuthCode(code);
+  async exchangeOAuthCode(
+    @Body('code') code: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const data = await this.authService.exchangeOAuthCode(code);
+    this.setAuthCookies(res, data.tokens);
+    return { isNewUser: data.isNewUser };
   }
 
   @Get('me')

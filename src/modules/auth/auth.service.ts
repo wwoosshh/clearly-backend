@@ -260,10 +260,17 @@ export class AuthService {
     };
   }
 
-  async logout(userId: string) {
-    await this.prisma.refreshToken.deleteMany({
-      where: { userId },
-    });
+  async logout(userId: string, refreshToken?: string) {
+    if (refreshToken) {
+      // 특정 기기의 토큰만 무효화
+      const hashedToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
+      await this.prisma.refreshToken.deleteMany({
+        where: { userId, token: hashedToken },
+      });
+    } else {
+      // 모든 토큰 무효화
+      await this.prisma.refreshToken.deleteMany({ where: { userId } });
+    }
 
     return { message: '로그아웃 되었습니다.' };
   }

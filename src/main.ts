@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import compression from 'compression';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -17,6 +18,9 @@ async function bootstrap() {
   // 프록시 환경 (Railway 등) 에서 클라이언트 IP 정확히 식별
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', 1);
+
+  // 쿠키 파서 (httpOnly 쿠키 읽기용)
+  app.use(cookieParser());
 
   // 보안 헤더 (Helmet)
   app.use(helmet());

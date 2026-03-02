@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { Request } from 'express';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { RedisService } from '../../../common/cache/redis.service';
 import { CACHE_TTL } from '../../../common/cache/cache.constants';
@@ -22,9 +23,18 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     private readonly redis: RedisService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: (req: Request) => {
+        // 1. httpOnly 쿠키 우선
+        const cookieToken = (req as any)?.cookies?.['accessToken'];
+        if (cookieToken) return cookieToken;
+        // 2. Authorization 헤더 폴백 (모바일 앱 / API 직접 호출 호환)
+        const authHeader = req?.headers?.authorization;
+        if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
+        return null;
+      },
       ignoreExpiration: false,
       secretOrKey: configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      passReqToCallback: false,
     });
   }
 
