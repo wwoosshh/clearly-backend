@@ -268,6 +268,13 @@ export class AdminService {
         });
       }
 
+      // 비활성화 시 Refresh Token 전체 삭제 (#7 fix)
+      if (!newIsActive) {
+        await tx.refreshToken.deleteMany({
+          where: { userId },
+        });
+      }
+
       return updatedUser;
     });
 
@@ -500,6 +507,11 @@ export class AdminService {
       await tx.user.update({
         where: { id: company.userId },
         data: { isActive: false },
+      });
+
+      // Refresh Token 전체 삭제 (#3 fix)
+      await tx.refreshToken.deleteMany({
+        where: { userId: company.userId },
       });
 
       return result;
@@ -858,9 +870,15 @@ export class AdminService {
       switch (dto.actionType) {
         case ReportActionType.SUSPEND_USER:
           if (report.targetType === 'USER') {
-            await this.prisma.user.update({
-              where: { id: report.targetId },
-              data: { isActive: false },
+            await this.prisma.$transaction(async (tx) => {
+              await tx.user.update({
+                where: { id: report.targetId },
+                data: { isActive: false },
+              });
+              // Refresh Token 전체 삭제 (#8 fix)
+              await tx.refreshToken.deleteMany({
+                where: { userId: report.targetId },
+              });
             });
             await this.redis.del(`jwt:user:${report.targetId}`);
           }
@@ -883,6 +901,10 @@ export class AdminService {
                 await tx.user.update({
                   where: { id: company.userId },
                   data: { isActive: false },
+                });
+                // Refresh Token 전체 삭제 (#8 fix)
+                await tx.refreshToken.deleteMany({
+                  where: { userId: company.userId },
                 });
               });
               await this.redis.del(`jwt:user:${company.userId}`);
